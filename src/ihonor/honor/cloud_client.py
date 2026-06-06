@@ -27,37 +27,57 @@ SDK_VER = "P9.0.0.301"
 
 @dataclass
 class HonorCreds:
-    """Долгоживущие креды для headless-минта токенов.
+    """Долгоживущие креды для headless-доступа.
 
-    service_token + device_id извлекаются разово из перехвата silent_token-запроса
-    приложения HonorWorkStation. scope — фиксированный (из перехвата).
+    silent_token_body — полное form-тело перехваченного silent_token-запроса
+    (grant_type=service_token&service_token=...&device_id=...&scope=...), извлекается
+    разово. device_id — dvID/deviceId устройства. Этого достаточно для headless auth+API.
     """
-    service_token: str
+    silent_token_body: str
     device_id: str
-    scope: str
-    x_hn_dt: str  # device token для sync-API заголовка x-hn-dt
 
 
 class HonorCloudClient:
+    """Headless-клиент. Auth-цепочка (вскрыта Phase 0, version=200 без app):
+      1. silent_token(service_token) -> access_token
+      2. POST space-dra /auth?deviceId=..&activation=true (Bearer) -> deviceTicket
+      3. ВСЕ /sync/notepad/* с заголовком x-hn-dt = deviceTicket.
+    Контент-крипта (workingKey) привязана к ENROLLED device keypair (keystore) — для
+    encode/decode тела заметки нужен нативный keystore-вызов (см. findings), НЕ portable.
+    """
+
     def __init__(self, creds: HonorCreds):
         self._c = creds
         self._access_token: str | None = None
+        self._device_ticket: str | None = None
         self._s = requests.Session()
 
+    def activate(self) -> str:
+        """POST /auth?deviceId=..&activation=true -> deviceTicket (= x-hn-dt сессии)."""
+        tok = self._access_token or self.mint_access_token()
+        r = self._s.post(
+            f"{SYNC_BASE}/auth",
+            params={"deviceId": self._c.device_id, "activation": "true"},
+            headers={
+                "Authorization": "Bearer " + tok, "Accept": "*/*",
+                "Content-Type": "application/json", "cache-control": "no-cache",
+                "pollingTimeout": "60", "sessionTimeout": "60",
+                "x-hn-sdkVer": SDK_VER, "x-hn-appVer": SDK_VER,
+            },
+            data='{"deviceType":"8","pushToken":"PC_"}',
+            timeout=15,
+        )
+        r.raise_for_status()
+        ticket: str = r.json()["data"]["deviceTicket"]
+        self._device_ticket = ticket
+        return ticket
+
     def mint_access_token(self) -> str:
-        """grant_type=service_token -> свежий access_token (доказано: 200)."""
-        body = {
-            "grant_type": "service_token",
-            "service_token": self._c.service_token,
-            "scope": self._c.scope,
-            "device_type": "1",
-            "device_id": self._c.device_id,
-            "need_code": "true",
-        }
+        """silent_token (grant_type=service_token) -> свежий access_token (доказано: 200)."""
         r = self._s.post(
             f"{OAUTH_BASE}/oauth2/v3/silent_token",
             params={"client_id": CLIENT_ID, "cversion": CVERSION},
-            data=body,
+            data=self._c.silent_token_body,
             headers={"Content-Type": "application/x-www-form-urlencoded", "Charset": "UTF-8"},
             timeout=15,
         )
@@ -68,9 +88,10 @@ class HonorCloudClient:
 
     def _h(self, extra: dict | None = None) -> dict:
         token = self._access_token or self.mint_access_token()
+        ticket = self._device_ticket or self.activate()
         h = {
             "Authorization": "Bearer " + token,
-            "x-hn-dt": self._c.x_hn_dt,
+            "x-hn-dt": ticket,  # = deviceTicket из /auth (ротируется посессионно)
             "x-hn-sdkVer": SDK_VER,
             "x-hn-appVer": SDK_VER,
             "Accept": "*/*",

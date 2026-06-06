@@ -185,6 +185,23 @@ upstream `data` = SM4(workingKey, этот JSON) в hex.
 - Свой SM2 keypair → keystore приложения НЕ нужен. `crypto.py`: gen_keypair, x-hn-cl-pbk
   header (len 124 ✓ совпало), ecdh_shared, unwrap кандидаты, sm4_encrypt_note.
 
+### АUTH-ЦЕПОЧКА C — РЕШЕНА (version=200 headless без app) ✅
+Причина 403 вскрыта: (1) пропущена space-dra активация сессии, (2) протухший x-hn-dt.
+Полная headless-цепочка (реализована в cloud_client.py):
+1. `POST hnoauth.../oauth2/v3/silent_token` (grant_type=service_token) → access_token.
+2. `POST space-dra /auth?deviceId=<id>&activation=true` Bearer + `{"deviceType":"8","pushToken":"PC_"}`
+   → `{"data":{"deviceTicket":"..."}}`.
+3. ВСЕ `/sync/notepad/*` с заголовком **`x-hn-dt = deviceTicket`** (ротируется посессионно). → 200.
+Креды разово: silent_token_body (form) + device_id. version() подтверждён 200.
+
+### КОНТЕНТ-КРИПТА — keystore-bound (ограничение C)
+- `GET workingKey?keyType=1` с НАШИМ (произвольным валидным SM2) x-hn-cl-pbk → **500 (30100)**.
+  С pubkey приложения → 200. Вывод: workingKey-обмен привязан к **enrolled device SM2 keypair**
+  (зарегистрирован при device-setup; private в libHnKeystoreSDK/HUKS), не к произвольному.
+- Следствие: encode/decode ТЕЛА заметки (SM4 working key) требует device keystore-ключа →
+  нативный вызов libHnKeystoreSDK (ctypes, как с ключом БД), привязан к этой enrolled-машине.
+  Чисто-portable (ключ на любом сервере) — НЕ выходит; нужен device keypair.
+
 ### ОТКРЫТО (последнее, нужен живой API)
 - Точный KDF `shared(32б) → SM4key(16б)` (кандидаты: shared[:16] / shared[16:] / sm3(shared)[:16])
   и режим SM4 блоба (ECB/CBC) — перебрать против live-ответа workingKey.
