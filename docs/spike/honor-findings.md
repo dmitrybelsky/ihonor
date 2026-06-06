@@ -214,7 +214,23 @@ upstream `data` = SM4(workingKey, этот JSON) в hex.
 обрамление: lock?lockType=1 → lock?lockType=04 → upstream → sync_end. Структуру сервер принял
 (прошли валидации luid→requestId→encrypted). НО `data` → **20031 "Data decryption failed"**.
 
-### НЕ ДОБИТО: upload-конверт `data` / правильный ключ
+### DATA-КОНВЕРТ ВСКРЫТ + ОКОНЧАТЕЛЬНЫЙ ВЫВОД (session-bound workingKey)
+- **Layout `data` = nonce(12) ‖ ciphertext ‖ tag(16)** — ПОДТВЕРЖДЕНО: расшифровал РЕАЛЬНЫЙ
+  upstream-блоб app харвестнутым working key (`AESGCM(wk).decrypt(blob[:12], blob[12:])` → note-JSON).
+- Ключ верный (декриптит реальные блобы app), layout верный, AES-256-GCM верный.
+- НО push → **20031** при: своей сессии + ключ; app-deviceTicket + ключ; даже под полным triple
+  (app Bearer+DT+WK) → там app Bearer уже истёк (401, гонка).
+- **ВЫВОД: working key привязан к СЕССИИ, где прошёл `/workingKey`** (= enrolled-device pubkey
+  сессия app). Сервер расшифровывает upload ключом, ЗАРЕГИСТРИРОВАННЫМ для сессии запроса
+  (по Bearer). Наша сессия `/workingKey`→500 (pubkey не enrolled) → нет ключа → 20031 любым ключом.
+- **РЕШЕНИЕ (последний шаг, как ключ БД):** вызвать device keystore нативно (`libHnKeystoreSDK`,
+  HUKS) чтобы выполнить `/workingKey` обмен с ENROLLED device-ключом под СВОЮ headless-сессию →
+  сервер регистрирует working key за нашей сессией → push расшифровывается. Привязано к этой
+  enrolled-машине (device-ключ в keystore), но полностью скриптуемо (ctypes-вызов их нативной
+  крипты, как honorcloud_aead_decrypt для БД).
+- Альтернатива: идеально оседлать живую сессию app (Bearer+DT+WK одновременно валидны) — racy.
+
+### [archive] НЕ ДОБИТО: upload-конверт `data` / правильный ключ
 - Пробованы layouts data: iv16||ct||tag, nonce12||ct||tag, nonce12||tag||ct, ct||tag → все 20031.
 - Пуш под СВОЕЙ сессией (deviceTicket) И под АPP-сессией (харвест app x-hn-dt) + харвест
   working key → оба 20031. version=200 под обеими сессиями.
