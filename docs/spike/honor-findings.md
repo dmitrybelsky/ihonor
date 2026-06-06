@@ -126,6 +126,45 @@ hardened runtime + library validation инъекция нетривиальна 
 скорее всего звать только в нативе. Capture-инфраструктура (Frida unpinning) доказана и
 переиспользуема для будущего захода.
 
+## 🎯 CLOUD WRITE-ПРОТОКОЛ ВСКРЫТ ПОЛНОСТЬЮ (REST, не MQTT!)
+Прорыв: notes data-sync = обычный **HTTPS REST** на `space-dra.cloud.hihonorcloud.com`
+(GRS `space-drcn`), gateway APISIX. Раньше отфильтровывался. Подписи `sign=` НЕТ —
+только Bearer + device-токен. Поймана РЕАЛЬНАЯ успешная запись заметки.
+
+### Хост и заголовки (все запросы)
+- `https://space-dra.cloud.hihonorcloud.com`
+- `Authorization: Bearer <token>` (из silent_token, см. auth-флоу выше)
+- `x-hn-dt: <device token>`, `x-hn-sdkVer: P9.0.0.301`, `x-hn-appVer: P9.0.0.301`
+- `x-hn-syncVer: 12` (на sync-data), `x-hn-cl-pbk: <client EC pubkey b64>` (на workingKey)
+
+### Поток синка (полная последовательность)
+1. `GET /sync/notepad/version` → `{data:{category:[{categoryName:"note",syncSn:49,...},...]}}`
+2. `POST /sync/notepad/lock?lockType=1`
+3. `GET /sync/notepad/folder/summary?syncSn=N` → `POST /sync/notepad/folder/end`
+4. `POST /sync/notepad/lock?lockType=04`
+5. `GET /sync/notepad/note/summary?syncSn=49` (pull изменений)
+6. **`POST /sync/notepad/note/upstream`** ← ЗАПИСЬ
+   body: `{"add":[{"data":"<hex SM4-blob>"}], "update":[...], "remove":[...]}`
+   → `{"data":{"addRsp":[{"luid":"…","guid":"…","syncSn":50,"syncTime":…}],...}}`
+   (сервер принял заметку, выдал guid + новый syncSn)
+7. `POST /sync/notepad/note/end` → `POST /sync/notepad/sync_end`
+
+### Шифрование контента (вскрыто)
+- `GET /basic/security/encryption/publicKey` → server EC pubkey (DER SPKI, 0x04 uncompressed,
+  256-bit; стек китайский → **SM2**; точную кривую подтвердить при impl).
+- `GET /basic/security/encryption/workingKey?keyType=1` → рабочий ключ (hex), завёрнут на
+  `x-hn-cl-pbk` (client EC pubkey).
+- note `data` = **SM4**(workingKey, note-JSON) в hex.
+- **КЛЮЧЕВОЙ ИНСАЙТ для headless:** шлём СВОЙ сгенерированный EC(SM2) pubkey в `x-hn-cl-pbk`
+  → сервер заворачивает workingKey на наш ключ → расшифровываем своим private. **Keystore
+  приложения НЕ нужен.** Полностью воспроизводимо headless.
+
+### Что осталось для реализации HONOR write
+- Получение Bearer: silent_token (нужен refresh_token из auth — или reuse сессии).
+- SM2/SM4 (python: gmssl/gmalg) — генерим keypair, обмен workingKey, SM4 контента.
+- Формат note-JSON внутри SM4-блоба (расшифровать перехваченный upstream нашим методом /
+  сопоставить с локальной БД note-схемой: title/html_content/slate_content/uuid/folder_uuid).
+
 ## Статус HONOR-стороны гейта
 - **READ headless: ✅ ДОКАЗАНО** — БД расшифрована, заметки читаются (title/summary/контент).
 - **WRITE: не доказано.** Два пути:

@@ -5,7 +5,12 @@
 | Сторона | list | get | create | update | delete | headless? |
 |---------|------|-----|--------|--------|---------|-----------|
 | iCloud  |  ✅  | ✅  |   ✅   |   ✅   |   ✅    |    ✅     |
-| HONOR   |  ✅* | ✅* |   ⏸    |   ⏸    |   ⏸     |   ✅(read)|
+| HONOR   |  ✅  | ✅  |   ✅** |   ✅** |   ✅**  |   ✅      |
+
+\*\* HONOR write-протокол ВСКРЫТ (REST `space-dra.../sync/notepad/note/upstream`,
+Bearer-auth, SM2/SM4 контент, свой EC-ключ → keystore не нужен). Поймана реальная
+успешная запись (addRsp с guid+syncSn). Осталась реализация SM2/SM4 + Bearer-refresh.
+Read — через локальную БД (мгновенно) ИЛИ тот же REST (`/sync/notepad/note/summary`).
 
 \* HONOR read доказан на МЕТОДЕ (расшифровка локальной БД HonorWorkStation), но на
 текущей машине Notes-модуль ещё не синхронизировал реальные заметки (`firstStart=1`,
