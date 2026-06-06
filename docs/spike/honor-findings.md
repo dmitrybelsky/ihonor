@@ -111,10 +111,20 @@ hardened runtime + library validation инъекция нетривиальна 
 - Приватный ключ — вероятно в `libHnKeystoreSDK` (HUKS). Если так → headless-подпись = звать
   их натив (ctypes), как с ключом БД.
 
-### Оценка: cloud-reverse = многосессионный нативный RE
-Стек: OAuth(silent_token) + webpush-notify + MQTT/CoAP data-канал, всё подписано, ключ в
-keystore. Capture-инфраструктура (Frida) доказана, auth+токены вскрыты. Остаток (MQTT/CoAP
-протокол + подпись + keystore) — отдельный большой проект.
+### MQTT/CoAP раунд (8 мин батч-capture с правками заметок)
+- `coap_add_data` поймана 264x — но это **LAN device-discovery**
+  (`coap://<lan-ip>/device_discover`, HONOR Connect/Magic Link между устройствами), НЕ cloud notes.
+- `Softbus::CloudLinkService::GetPayloadSign` и `Softbus::HmacSha256` за 8 минут с правками
+  заметок **НЕ сработали** ни разу.
+- Значит cloud notes data-upload с десктопа: либо pull-based, либо долгий батч-цикл, либо
+  идёт по уже установленной нативной MQTT-сессии (точку записи не запинпойнтили).
+
+### ИТОГ: cloud-reverse = крупный отдельный RE-проект (не закрыт в этой сессии)
+Захватываемо: auth(silent_token+Bearer), webpush-notify, LAN-discovery, device UDID/account.
+НЕ вскрыто: cloud notes data-протокол записи + подпись + keystore. Это HONOR Softbus/CloudLink
+нативный фреймворк (ArkNetwork/TcpManager/MQTT/CoAP) — недели реверса, плюс keystore-подпись
+скорее всего звать только в нативе. Capture-инфраструктура (Frida unpinning) доказана и
+переиспользуема для будущего захода.
 
 ## Статус HONOR-стороны гейта
 - **READ headless: ✅ ДОКАЗАНО** — БД расшифрована, заметки читаются (title/summary/контент).
