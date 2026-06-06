@@ -36,6 +36,22 @@ slate_modify_time, has_attachment, is_top, lock_status, delete_time`.
 - `search_content` = плоский текст, `html_content` = rich, `slate_content` = JSON редактора Slate.
 - Метаданные синка: `dirty`, `max_version`, `guid`, `unstruct_guid`.
 
+## Облачный Data Sync — НАТИВНЫЙ (для headless WRITE без app)
+- Синк заметок реализован НЕ в JS, а в нативе: `HnOfficeSdk.node` →
+  `OfficeCenter/libpcSyncSDKLibrary.dylib` (экспорты `StartSyncData`, `EndSync`,
+  `OnUploadSyncStart`, `OnDataSyncEnd`, `SetPollingUrl2Reg`, `ReportSyncEvent`).
+- Сеть: бандл **libcurl 4.8 + openssl 1.1** (`OfficeCenter/libcurl*.dylib`, `libssl.1.1`).
+- Endpoints резолвятся в рантайме через **GRS SDK** (`libGRSSdk.dylib`) по стране — хардкода мало.
+- Запросы, вероятно, подписаны (device-cert / HMAC в нативе) — главный риск headless-реимплементации.
+- JS-слой: `note/services/cloud.ts` → `hnOfficeProxy` / `RegisterRecvNoteCloudSyncSwitch`.
+
+### План вскрытия cloud API (динамика)
+- libcurl уважает `HTTPS_PROXY` + `SSL_CERT_FILE`/`CURL_CA_BUNDLE` → перехват без root:
+  запуск HonorWorkStation с env на mitmproxy + доверенный mitm-CA, триггер синка заметок.
+- Снять: GRS-резолв endpoint, auth (HONOR ID access token), формат запроса notes sync
+  (list/pull/push), схему подписи. Затем оценить, воспроизводима ли подпись headless.
+- Риск: certificate pinning сверх CA-проверки; подпись считается только в нативе.
+
 ## Статус HONOR-стороны гейта
 - **READ headless: ✅ ДОКАЗАНО** — БД расшифрована, заметки читаются (title/summary/контент).
 - **WRITE: не доказано.** Два пути:
