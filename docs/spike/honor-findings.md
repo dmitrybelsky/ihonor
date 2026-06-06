@@ -52,6 +52,21 @@ slate_modify_time, has_attachment, is_top, lock_status, delete_time`.
   (list/pull/push), схему подписи. Затем оценить, воспроизводима ли подпись headless.
 - Риск: certificate pinning сверх CA-проверки; подпись считается только в нативе.
 
+## Динамика: захват трафика — СТЕНА (cert pinning)
+Запуск app с `HTTPS_PROXY` + `SSL_CERT_FILE`(mitm CA) → mitmproxy :8080:
+- Перехвачено: `metrics-test-drcn.dt.hihonorcloud.com/magicv1` (libcurl, НЕ пиннит).
+- Отвергнуто (свой trust-store, pinning):
+  - `hnoauth-login-dra.cloud.honor.com` (OAuth-логин) — `tlsv1 alert unknown ca`.
+  - `hnid-dra.platform.hihonorcloud.com` (HONOR ID платформа) — то же.
+- Следствие: auth не проходит через proxy → `syncing failed`. `SSL_CERT_FILE` влияет
+  только на метрику-libcurl, не на нативный auth/sync SSL (`libHNAccountOauthSdk`, libpcSyncSDK).
+- Хосты вскрыты (полезно), но тела/токены/подпись — нет.
+
+### Вывод по cloud-API reverse
+Нужно ДЕФИТ pinning: Frida-хуки SSL_verify в нативе running-процесса. На macOS с
+hardened runtime + library validation инъекция нетривиальна (возможно нужен SIP off).
+Плюс реимплементация нативной подписи запросов. Большой, неопределённый объём.
+
 ## Статус HONOR-стороны гейта
 - **READ headless: ✅ ДОКАЗАНО** — БД расшифрована, заметки читаются (title/summary/контент).
 - **WRITE: не доказано.** Два пути:
