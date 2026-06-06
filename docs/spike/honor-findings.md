@@ -202,7 +202,32 @@ upstream `data` = SM4(workingKey, этот JSON) в hex.
   нативный вызов libHnKeystoreSDK (ctypes, как с ключом БД), привязан к этой enrolled-машине.
   Чисто-portable (ключ на любом сервере) — НЕ выходит; нужен device keypair.
 
-### КОНТЕНТ-ШИФР — stream mode, харвест ключа (последнее)
+### КОНТЕНТ-ШИФР = AES-256-GCM (вскрыто), upload-конверт НЕ добит
+- nid cipher 901 = **aes-256-gcm** (НЕ SM4! SM2 только для обмена workingKey).
+- ПОДТВЕРЖДЕНО офлайн: `AES-256-GCM(workingKey32, iv[:12], note-JSON) == ct` (match=True)
+  на харвестнутой паре (хук EVP_CipherInit_ex key32 + EVP_EncryptUpdate plaintext).
+- workingKey = 32-байт AES-ключ. iv = nonce12 + `04000000` (GCM nonce = первые 12).
+
+### UPSTREAM request — структура принята (200), но 20031 на расшифровке
+`POST /sync/notepad/note/upstream` body:
+`{"requestId":<hex>,"add":[{"luid":<hex>,"encrypted":true,"data":<hex>}],"update":[],"remove":[]}`
+обрамление: lock?lockType=1 → lock?lockType=04 → upstream → sync_end. Структуру сервер принял
+(прошли валидации luid→requestId→encrypted). НО `data` → **20031 "Data decryption failed"**.
+
+### НЕ ДОБИТО: upload-конверт `data` / правильный ключ
+- Пробованы layouts data: iv16||ct||tag, nonce12||ct||tag, nonce12||tag||ct, ct||tag → все 20031.
+- Пуш под СВОЕЙ сессией (deviceTicket) И под АPP-сессией (харвест app x-hn-dt) + харвест
+  working key → оба 20031. version=200 под обеими сессиями.
+- Вывод-гипотеза: харвестнутый через EVP ключ — НЕ ключ upload (возможно EVP-хук поймал
+  локальное/иное шифрование), ЛИБО per-upload key-envelope (workingKey заворачивается на
+  каждый upload), ЛИБО `data` имеет доп. обёртку (версия ключа/заголовок) перед iv||ct||tag.
+- РЕШАЮЩИЙ следующий шаг: поймать РЕАЛЬНЫЙ upstream `data`-блоб app (SSL_write во всех ssl-либах,
+  фильтр '"add"'+'"data"', тело может быть в неск. SSL_write — собирать по ctx/порядку) ВМЕСТЕ
+  с working key того же мига → расшифровать офлайн (перебор layout) → точный конверт. Затем push.
+- workingKey endpoint с НАШИМ pubkey → 500 (нужен enrolled device pubkey); под app-сессией key
+  account-level, но конверт upload не воспроизведён.
+
+### КОНТЕНТ-ШИФР — stream mode, харвест ключа (ранняя заметка, уточнено выше)
 - Харвест с живого app: outl==inl (НЕ кратно 16) → **SM4 stream mode** (CTR/CFB/OFB/GCM), iv хвост `04000000`.
 - keystream0 = ct⊕pt ≠ E(iv)/E(counter) с харвестнутым ключом → ctx→key корреляция взяла не тот
   ключ (EVP_CIPHER_CTX переиспользуются) ИЛИ per-note nonce. Нужна чистая корреляция:
