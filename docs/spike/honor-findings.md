@@ -222,15 +222,22 @@ upstream `data` = SM4(workingKey, этот JSON) в hex.
   устройства при setup приложения (с keystore-ключом). **Headless-write под НЕЗАВИСИМОЙ
   сессией заблокирован дизайном HONOR.**
 
-### ПРАКТИЧЕСКИЕ ПУТИ WRITE (выбор для сборки)
-1. **Оседлать живую app-сессию** (Bearer+DT+WK валидны одновременно, <token TTL): автоматизир.
-   harvest→push БЕЗ человеческого зазора (Frida инжект push изнутри app-контекста ИЛИ внешний
-   push в тот же миг). Ранний 401 = Bearer истёк за зазор «готово»; без зазора может пройти.
-2. **DB-инъекция**: писать в локальную ChaCha20-БД (ключ вскрыт) + dirty=1 + дать app синкать —
-   sidestep всей crypto/enrollment. Хрупко (note+page+element), но app сам делает enrollment-crypto.
-3. **Reproduce device enrollment** headless (keystore-ключ + enroll-флоу) — глубоко, макс. автономность.
-- Что ВСКРЫТО и ГОТОВО: auth headless, AES-256-GCM, layout nonce12‖ct‖tag, working key (декриптит
-  реальные блобы), upstream-структура, note-JSON. Барьер только enrollment-binding /workingKey.
+### ОКОНЧАТЕЛЬНО: внешний headless-write ЗАБЛОКИРОВАН (двойной биндинг)
+Проверено со всех сторон:
+- Независимая сессия → `/workingKey` **500** (device не enrolled на crypto-сервисе).
+- Реплей ЖИВОГО app Bearer (авто-push, под-секундный зазор) → **401**. App им ходит, реплей — нет
+  → Bearer **привязан** (TLS/connection-binding/nonce), не реплеибелен.
+→ Внешний процесс не может писать в облако HONOR. Барьер — security-биндинг (enrollment + token),
+  не пробел знаний: протокол/крипта/формат вскрыты полностью.
+
+### ПРАКТИЧЕСКИЕ ПУТИ WRITE (реальные)
+1. **DB-инъекция (рекомендую для bidirectional):** писать в локальную ChaCha20-БД (ключ вскрыт,
+   honor_dbkey.py) note(+page/element) с dirty=1 + дать HonorWorkStation синкать в облако —
+   app сам делает enrollment-crypto+upload. Sidestep всего биндинга. Минус: app должен быть запущен.
+2. **In-process Frida-drive:** инжект в app, вызвать его же upload-функции с нашей заметкой. Сложно.
+3. **HONOR→iCloud односторонне:** read HONOR (локальная БД) + write iCloud — БЕЗ HONOR-write вообще.
+- ВСКРЫТО/ГОТОВО (для справки/частичного использования): auth headless (read-only API типа version),
+  AES-256-GCM, layout nonce12‖ct‖tag, working key, upstream-структура, note-JSON.
 
 ### DATA-КОНВЕРТ ВСКРЫТ (детали)
 - **Layout `data` = nonce(12) ‖ ciphertext ‖ tag(16)** — ПОДТВЕРЖДЕНО: расшифровал РЕАЛЬНЫЙ
