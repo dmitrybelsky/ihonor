@@ -159,11 +159,30 @@ hardened runtime + library validation инъекция нетривиальна 
   → сервер заворачивает workingKey на наш ключ → расшифровываем своим private. **Keystore
   приложения НЕ нужен.** Полностью воспроизводимо headless.
 
-### Что осталось для реализации HONOR write
-- Получение Bearer: silent_token (нужен refresh_token из auth — или reuse сессии).
-- SM2/SM4 (python: gmssl/gmalg) — генерим keypair, обмен workingKey, SM4 контента.
-- Формат note-JSON внутри SM4-блоба (расшифровать перехваченный upstream нашим методом /
-  сопоставить с локальной БД note-схемой: title/html_content/slate_content/uuid/folder_uuid).
+### Headless auth — ДОКАЗАНО (`src/ihonor/honor/cloud_client.py`)
+- `POST /oauth2/v3/silent_token` `grant_type=service_token` + `service_token`(долгоживущий,
+  53симв) + `device_id`(64hex) + `scope` → 200, свежий `access_token`(128) + refresh_token.
+- service_token/device_id извлекаются разово из перехвата silent_token-запроса приложения.
+- Свежим токеном: `GET /sync/notepad/version`, `publicKey` → 200. ✅
+
+### note-JSON формат — ВСКРЫТ (хук EVP_EncryptUpdate, plaintext до SM4)
+camelCase от DB-схемы. Поля: `uuid, title, guid("" для new), folderUuid, summary, favorite,
+type(2=text/6=handwrite), hasAttach, labelUuid, defaultNote, unstructGuid, dirty(1), deleteFlag,
+createTime, modifyTime, deleteTime, relateNoteUuid, firstAttachUuid, lockStatus,
+lockSecurityUuid, description, isTop, hasTodo, hasRecord, background, handwriteBackground,
+titleType("edit"), htmlContent("<p class=...>..."), htmlContentUuid, searchContent, slateContent`.
+upstream `data` = SM4(workingKey, этот JSON) в hex.
+
+### Контент-шифр — SM4 (хук EVP_CipherInit_ex↔EncryptUpdate по ctx)
+- SM4, key=16 байт (= unwrapped workingKey), **iv=16 байт присутствует** → CBC/CTR (НЕ ECB).
+  Через openssl 1.1 `EVP_sm4_*` (libcrypto.1.1). Точный режим (CBC vs CTR) — подтвердить
+  decrypt-ом перехваченного блоба.
+
+### ЕДИНСТВЕННОЕ остаётся для автономного push
+- **unwrap KDF workingKey**: 72-байт blob от `GET workingKey` (завёрнут на x-hn-cl-pbk)
+  → 16-байт SM4-ключ. Свой SM2-keypair → обмен → unwrap. Изолированный шаг; вскрыть хуком
+  SM2/ECDH-decrypt (EVP_PKEY_decrypt/ECDH_compute_key) в libcrypto.1.1.
+- Затем: SM4-encrypt note-JSON → POST upstream (lock→upstream→end→sync_end). Протокол готов.
 
 ## Статус HONOR-стороны гейта
 - **READ headless: ✅ ДОКАЗАНО** — БД расшифрована, заметки читаются (title/summary/контент).
