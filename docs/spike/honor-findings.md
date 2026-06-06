@@ -214,7 +214,25 @@ upstream `data` = SM4(workingKey, этот JSON) в hex.
 обрамление: lock?lockType=1 → lock?lockType=04 → upstream → sync_end. Структуру сервер принял
 (прошли валидации luid→requestId→encrypted). НО `data` → **20031 "Data decryption failed"**.
 
-### DATA-КОНВЕРТ ВСКРЫТ + ОКОНЧАТЕЛЬНЫЙ ВЫВОД (session-bound workingKey)
+### АРХИТЕКТУРНАЯ СТЕНА: /workingKey привязан к device-enrollment (НЕ к pubkey)
+- Тест: `/workingKey` с **enrolled pubkey app** (публичный, перехвачен) под НАШЕЙ сессией → 500.
+  → 500 не про pubkey, а про **СЕССИЮ**. App-сессия → 200; любая наша (минченный токен + наш
+  /auth) → 500. Наша «device» не зарегистрирована на crypto-сервисе space-dra.
+- Вывод: cloud-space крипта (workingKey) привязана к **device enrollment** — регистрация
+  устройства при setup приложения (с keystore-ключом). **Headless-write под НЕЗАВИСИМОЙ
+  сессией заблокирован дизайном HONOR.**
+
+### ПРАКТИЧЕСКИЕ ПУТИ WRITE (выбор для сборки)
+1. **Оседлать живую app-сессию** (Bearer+DT+WK валидны одновременно, <token TTL): автоматизир.
+   harvest→push БЕЗ человеческого зазора (Frida инжект push изнутри app-контекста ИЛИ внешний
+   push в тот же миг). Ранний 401 = Bearer истёк за зазор «готово»; без зазора может пройти.
+2. **DB-инъекция**: писать в локальную ChaCha20-БД (ключ вскрыт) + dirty=1 + дать app синкать —
+   sidestep всей crypto/enrollment. Хрупко (note+page+element), но app сам делает enrollment-crypto.
+3. **Reproduce device enrollment** headless (keystore-ключ + enroll-флоу) — глубоко, макс. автономность.
+- Что ВСКРЫТО и ГОТОВО: auth headless, AES-256-GCM, layout nonce12‖ct‖tag, working key (декриптит
+  реальные блобы), upstream-структура, note-JSON. Барьер только enrollment-binding /workingKey.
+
+### DATA-КОНВЕРТ ВСКРЫТ (детали)
 - **Layout `data` = nonce(12) ‖ ciphertext ‖ tag(16)** — ПОДТВЕРЖДЕНО: расшифровал РЕАЛЬНЫЙ
   upstream-блоб app харвестнутым working key (`AESGCM(wk).decrypt(blob[:12], blob[12:])` → note-JSON).
 - Ключ верный (декриптит реальные блобы app), layout верный, AES-256-GCM верный.
