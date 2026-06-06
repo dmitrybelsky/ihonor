@@ -178,11 +178,20 @@ upstream `data` = SM4(workingKey, этот JSON) в hex.
   Через openssl 1.1 `EVP_sm4_*` (libcrypto.1.1). Точный режим (CBC vs CTR) — подтвердить
   decrypt-ом перехваченного блоба.
 
-### ЕДИНСТВЕННОЕ остаётся для автономного push
-- **unwrap KDF workingKey**: 72-байт blob от `GET workingKey` (завёрнут на x-hn-cl-pbk)
-  → 16-байт SM4-ключ. Свой SM2-keypair → обмен → unwrap. Изолированный шаг; вскрыть хуком
-  SM2/ECDH-decrypt (EVP_PKEY_decrypt/ECDH_compute_key) в libcrypto.1.1.
-- Затем: SM4-encrypt note-JSON → POST upstream (lock→upstream→end→sync_end). Протокол готов.
+### unwrap workingKey = ECDH (вскрыто хуком) — реализовано `src/ihonor/honor/crypto.py`
+- Хук `ECDH_compute_key` → 32-байт shared secret; `EVP_PKEY_decrypt`=0 → НЕ SM2-конверт.
+- Схема: **ECDH(client_priv, server_pub)** на SM2-кривой → shared X (32б) → SM4-ключ из
+  shared → SM4-decrypt(72б workingKey blob) → SM4 working key (16б).
+- Свой SM2 keypair → keystore приложения НЕ нужен. `crypto.py`: gen_keypair, x-hn-cl-pbk
+  header (len 124 ✓ совпало), ecdh_shared, unwrap кандидаты, sm4_encrypt_note.
+
+### ОТКРЫТО (последнее, нужен живой API)
+- Точный KDF `shared(32б) → SM4key(16б)` (кандидаты: shared[:16] / shared[16:] / sm3(shared)[:16])
+  и режим SM4 блоба (ECB/CBC) — перебрать против live-ответа workingKey.
+- **Блокер сейчас:** space-dra отдаёт **403** на свежеминченный токен (раньше 200). Вероятно
+  WAF/rate-limit после сотен запросов сессии, ЛИБО токен для space-dra нужен через обмен
+  `POST /AccountServer/IUserInfoMng/stAuth` (видели в трафике) перед использованием. Уточнить.
+- После: SM4-encrypt note-JSON → upstream (lock→upstream→end→sync_end). Весь протокол готов.
 
 ## Статус HONOR-стороны гейта
 - **READ headless: ✅ ДОКАЗАНО** — БД расшифрована, заметки читаются (title/summary/контент).
