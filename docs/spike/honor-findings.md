@@ -83,6 +83,30 @@ hardened runtime + library validation инъекция нетривиальна 
 Выполнимо (SIP off), но многосессионный нативный RE: lazy-load + child-process + static-TLS +
 реверс подписи. Высокая неопределённость на этапе подписи.
 
+## Frida-capture — МЕТОД РАБОТАЕТ (auth вскрыт, data-sync ещё нет)
+Рабочая схема (без секретов в репо; токены остаются в /tmp, gitignored):
+- Watcher (`/tmp/watcher.py`, БЕЗ child-gating — gating вешал app!) переаттачивается к
+  `HnOfficeCenter` при каждом respawn (процесс волатилен).
+- Inject (`/tmp/inject.js`): хук `SSL_write`/`SSL_read` в `libssl.1.1.dylib` →
+  plaintext ДО шифрования. Обходит pinning и static-TLS. libpcSyncSDK импортит curl/ssl
+  динамически → ловится.
+
+### Вскрытый auth-флоу
+- `POST https://hnoauth-login-dra.cloud.honor.com/oauth2/v3/silent_token?client_id=211059920&cversion=win_HnID_4.0.4.001`
+  → ответ содержит `access_token` (формат `CgB6e3x9...`). client_id=211059920.
+- Заголовки запросов: `Authorization: Bearer <access_token>`, `x-hn-dt` (device token),
+  `x-hn-cl-pbk` (client public key → запросы ПОДПИСАНЫ ECDSA клиентским ключом).
+- Push-канал: `GET https://webpush-dra.cloud.hihonorcloud.com/message?sign=<sig>` (long-poll
+  уведомление об изменениях).
+
+### ЕЩЁ НЕ вскрыто (тяжёлое ядро)
+- Сам **notes data-sync endpoint** (GRS-резолвится, отдельный `*-drcn.cloud.hihonorcloud.com`
+  хост) — проскакивает гонку с respawn HnOfficeCenter; нужен более быстрый/ранний хук
+  (хук GRS-резолвера или `curl_easy_setopt(URL)` с ловлей при загрузке libpcSync).
+- Формат запроса записи заметки (тело: protobuf/json?).
+- **Схема ПОДПИСИ** (`x-hn-cl-pbk`/`sign=`): воспроизводима ли headless или считается только
+  в нативе (тогда — звать их натив через ctypes, как с ключом БД).
+
 ## Статус HONOR-стороны гейта
 - **READ headless: ✅ ДОКАЗАНО** — БД расшифрована, заметки читаются (title/summary/контент).
 - **WRITE: не доказано.** Два пути:
