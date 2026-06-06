@@ -1,0 +1,7 @@
+.remember/
+.claude/
+__pycache__/
+*.pyc
+.env
+.venv/
+state.db
