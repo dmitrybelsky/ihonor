@@ -38,13 +38,28 @@
   Внутри — protobuf Apple Notes (ICNoteData): текст заметки лежит UTF-8-строкой,
   `￼`(U+FFFC) = позиции вложений, далее attribute-runs форматирования. ✓ текст извлекается.
 
-## ОСТАЁТСЯ доказать (WRITE) — главный риск гейта
-- `CREATE/UPDATE/DELETE` через `records/modify`
-  (`operations[].operationType` = create/update/forceDelete).
-- Сложность: для записи нужно собрать валидный `TextDataEncrypted` (protobuf+gzip+base64)
-  и, вероятно, CRDT-поля версий (`ReplicaIDToNotesVersionData...`), плюс `recordChangeTag` для update.
-- CREATE простой заметки может пройти с минимумом полей — проверяется отдельно.
+## WRITE — ДОКАЗАНО (`scripts/icloud_write_probe.py`)
+Endpoint: `POST {ck}/database/1/com.apple.notes/production/private/records/modify`,
+body `{"operations":[{operationType, record}], "zoneID":{"zoneName":"Notes"}}`.
 
-## Вердикт по iCloud (промежуточный)
-- READ headless: **ПРОЙДЕНО**.
-- WRITE headless: **не доказано** — следующий шаг.
+- **CREATE** (`operationType=create`): задаём `recordName`=UUID, `recordType=Note`,
+  поля `TitleEncrypted`=base64(utf8), `TextDataEncrypted`=base64(gzip(protobuf)),
+  `Folder`/`Folders`=ref на `DefaultFolder-CloudKit`, `CreationDate`/`ModificationDate`,
+  `Deleted=0`. → 200, возвращает `recordName` + `recordChangeTag`. ✓
+- **UPDATE** (`operationType=update`): `recordName` + `recordChangeTag` (обязателен) +
+  изменённые поля. → 200, новый `recordChangeTag`. ✓
+- **DELETE** (`operationType=forceDelete`): `{recordName}`. → 200 `{"deleted":true}`. ✓
+- CRDT-поля версий (`ReplicaIDToNotesVersionData...`) для CREATE/UPDATE простого
+  текста НЕ обязательны — сервер принимает минимальный protobuf и пересериализует.
+
+### Минимальный TextData protobuf (валиден, round-trip подтверждён)
+`NoteStoreProto.document(field2) -> Document.note(field3) -> Note{note_text(field2,string),
+attribute_run(field5){length(field1)}}`, затем `gzip` + `base64`. Реализация —
+`build_note_blob()` в write-probe. Для fidelity (форматирование, вложения, чек-листы)
+нужен полный protobuf — отдельная задача сборки.
+
+## Вердикт по iCloud — ГЕЙТ ПРОЙДЕН headless
+- READ (list/get/decode): ✅
+- WRITE (create/update/delete): ✅
+- Остаточные риски: fidelity (богатый контент), Advanced Data Protection (на ADP-аккаунтах
+  сервер вернёт реальный шифр — текущий аккаунт без ADP), хрупкость приватного API.
