@@ -202,6 +202,13 @@ upstream `data` = SM4(workingKey, этот JSON) в hex.
   нативный вызов libHnKeystoreSDK (ctypes, как с ключом БД), привязан к этой enrolled-машине.
   Чисто-portable (ключ на любом сервере) — НЕ выходит; нужен device keypair.
 
+### КОНТЕНТ-ШИФР — stream mode, харвест ключа (последнее)
+- Харвест с живого app: outl==inl (НЕ кратно 16) → **SM4 stream mode** (CTR/CFB/OFB/GCM), iv хвост `04000000`.
+- keystream0 = ct⊕pt ≠ E(iv)/E(counter) с харвестнутым ключом → ctx→key корреляция взяла не тот
+  ключ (EVP_CIPHER_CTX переиспользуются) ИЛИ per-note nonce. Нужна чистая корреляция:
+  хук Init ИМЕННО на note-ctx перед EncryptUpdate + полный pt/ct → определить mode → реализовать.
+- Working key account-scoped → харвест у app + свой deviceTicket (тот же аккаунт) для push.
+
 ### ОТКРЫТО (последнее, нужен живой API)
 - Точный KDF `shared(32б) → SM4key(16б)` (кандидаты: shared[:16] / shared[16:] / sm3(shared)[:16])
   и режим SM4 блоба (ECB/CBC) — перебрать против live-ответа workingKey.
