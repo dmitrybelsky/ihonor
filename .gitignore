@@ -8,3 +8,4 @@ state.db
 *.egg-info/
 __pycache__/
 .pytest_cache/
+.icloud-session/
