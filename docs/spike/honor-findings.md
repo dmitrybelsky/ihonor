@@ -99,13 +99,22 @@ hardened runtime + library validation инъекция нетривиальна 
 - Push-канал: `GET https://webpush-dra.cloud.hihonorcloud.com/message?sign=<sig>` (long-poll
   уведомление об изменениях).
 
-### ЕЩЁ НЕ вскрыто (тяжёлое ядро)
-- Сам **notes data-sync endpoint** (GRS-резолвится, отдельный `*-drcn.cloud.hihonorcloud.com`
-  хост) — проскакивает гонку с respawn HnOfficeCenter; нужен более быстрый/ранний хук
-  (хук GRS-резолвера или `curl_easy_setopt(URL)` с ловлей при загрузке libpcSync).
-- Формат запроса записи заметки (тело: protobuf/json?).
-- **Схема ПОДПИСИ** (`x-hn-cl-pbk`/`sign=`): воспроизводима ли headless или считается только
-  в нативе (тогда — звать их натив через ctypes, как с ключом БД).
+### ЕЩЁ НЕ вскрыто (тяжёлое ядро) — data-sync НЕ по HTTP
+По HTTP/libssl.1.1 при создании заметки идут ТОЛЬКО: `silent_token` (auth) +
+`webpush /message` (notify). Сам **контент заметок синкается НЕ по HTTP** — судя по
+`Softbus::MqttCallback::GetSign` / `libcoap-3-openssl` — по **MQTT/CoAP** через Softbus
+(CloudLink). Это отдельный протокол-стек.
+- Нужно: хук MQTT/CoAP publish в libSoftbus/libcoap (не SSL_write), вскрыть topic+payload.
+- `Softbus::CloudLinkService::GetPayloadSign` / `Softbus::HmacSha256` — функции подписи
+  найдены, но при триггере не сработали (upload батчится/идёт по MQTT-сессии, не на каждое
+  изменение). Подпись формата `keyId:hex` (HMAC-SHA256 кандидат).
+- Приватный ключ — вероятно в `libHnKeystoreSDK` (HUKS). Если так → headless-подпись = звать
+  их натив (ctypes), как с ключом БД.
+
+### Оценка: cloud-reverse = многосессионный нативный RE
+Стек: OAuth(silent_token) + webpush-notify + MQTT/CoAP data-канал, всё подписано, ключ в
+keystore. Capture-инфраструктура (Frida) доказана, auth+токены вскрыты. Остаток (MQTT/CoAP
+протокол + подпись + keystore) — отдельный большой проект.
 
 ## Статус HONOR-стороны гейта
 - **READ headless: ✅ ДОКАЗАНО** — БД расшифрована, заметки читаются (title/summary/контент).

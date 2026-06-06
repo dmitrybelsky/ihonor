@@ -11,3 +11,4 @@ __pycache__/
 .icloud-session/
 /tmp/
 *.flows
+.playwright-mcp/
