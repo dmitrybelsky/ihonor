@@ -67,6 +67,22 @@ slate_modify_time, has_attachment, is_top, lock_status, delete_time`.
 hardened runtime + library validation инъекция нетривиальна (возможно нужен SIP off).
 Плюс реимплементация нативной подписи запросов. Большой, неопределённый объём.
 
+## Frida-capture попытка (SIP off → attach работает)
+- SIP на машине **отключён** → Frida аттачится к hardened app без переподписи/reboot.
+- OpenSSL-unpinning (X509_verify_cert→1, SSL_get_verify_result→0, set_verify→NONE) — хуки
+  встали, но захват пуст.
+- Хуки `SSL_write`/`SSL_read` и `curl_easy_setopt` в ГЛАВНОМ процессе — НЕ фаят на sync.
+- Причина: нативный sync-субсистем (`libpcSyncSDKLibrary`) грузится **лениво** (при открытии
+  «Заметки»/синке), сетевой I/O идёт **не в главном процессе** (вероятно transient
+  utility-процесс через HnOfficeSdk), TLS возможно статически слинкован (свой BoringSSL).
+- `HTTPS_PROXY` нативный sync игнорит (читает только метрика-libcurl).
+- Чтобы поймать: frida **spawn + child-gating** + ловля загрузки `libpcSyncSDK` в нужном
+  процессе, хук на curl/SSL там. Ещё слой; затем реверс ПОДПИСИ запросов (главная неизвестность).
+
+### Оценка cloud-API reverse
+Выполнимо (SIP off), но многосессионный нативный RE: lazy-load + child-process + static-TLS +
+реверс подписи. Высокая неопределённость на этапе подписи.
+
 ## Статус HONOR-стороны гейта
 - **READ headless: ✅ ДОКАЗАНО** — БД расшифрована, заметки читаются (title/summary/контент).
 - **WRITE: не доказано.** Два пути:
