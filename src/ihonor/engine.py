@@ -1,6 +1,20 @@
-from ihonor.note import Note, content_hash
+from dataclasses import dataclass, field
+
 from ihonor.adapter import NoteAdapter
+from ihonor.note import Note, content_hash
 from ihonor.state_store import StateStore, Pair
+
+
+@dataclass
+class SyncStats:
+    created_honor: int = 0
+    created_icloud: int = 0
+    updated_honor: int = 0
+    updated_icloud: int = 0
+    conflicts: int = 0
+    deleted_honor: int = 0
+    deleted_icloud: int = 0
+    errors: list[str] = field(default_factory=list)
 
 
 class SyncEngine:
@@ -9,7 +23,8 @@ class SyncEngine:
         self.icloud = icloud
         self.store = store
 
-    def sync_once(self) -> None:
+    def sync_once(self) -> SyncStats:
+        s = SyncStats()
         h_notes = {n.ext_id: n for n in self.honor.list() if not n.deleted}
         i_notes = {n.ext_id: n for n in self.icloud.list() if not n.deleted}
         paired_h = {p.honor_id for p in self.store.all()}
@@ -21,16 +36,17 @@ class SyncEngine:
                 actual = self.icloud.get(iid)
                 self.store.upsert(Pair(hid, iid, content_hash(hn),
                                        content_hash(actual) if actual else content_hash(hn)))
+                s.created_icloud += 1
         for iid, ino in i_notes.items():
             if iid not in paired_i:
                 hid = self.honor.create(ino)
                 if not hid:
-                    continue  # create-find промах — не паримся, повтор в след. цикле
+                    continue
                 actual = self.honor.get(hid)
-                # храним РЕАЛЬНЫЙ хеш HONOR-стороны (title может быть обрезан) => без ложных update
                 self.store.upsert(Pair(hid, iid,
                                        content_hash(actual) if actual else content_hash(ino),
                                        content_hash(ino)))
+                s.created_honor += 1
 
         for p in self.store.all():
             hn = h_notes.get(p.honor_id)
@@ -43,16 +59,19 @@ class SyncEngine:
             if h_changed and not i_changed:
                 self.icloud.update(p.icloud_id, hn)
                 self.store.upsert(Pair(p.honor_id, p.icloud_id, hh, hh))
+                s.updated_icloud += 1
             elif i_changed and not h_changed:
                 try:
                     self.honor.update(p.honor_id, ino)
                     self.store.upsert(Pair(p.honor_id, p.icloud_id, ih, ih))
+                    s.updated_honor += 1
                 except NotImplementedError:
-                    pass  # адаптер не поддерживает update (напр. HONOR CDP) — пропуск
+                    pass
             elif h_changed and i_changed:
                 conflict = Note("", hn.title + " (conflict)", hn.body_text, hn.mtime)
                 self.icloud.create(conflict)
                 self.store.upsert(Pair(p.honor_id, p.icloud_id, hh, ih))
+                s.conflicts += 1
 
         h_ids = {n.ext_id for n in self.honor.list() if not n.deleted}
         i_ids = {n.ext_id for n in self.icloud.list() if not n.deleted}
@@ -62,9 +81,12 @@ class SyncEngine:
             if h_gone and not i_gone:
                 self.icloud.delete(p.icloud_id)
                 self.store.remove(p.honor_id)
+                s.deleted_icloud += 1
             elif i_gone and not h_gone:
                 try:
                     self.honor.delete(p.honor_id)
                     self.store.remove(p.honor_id)
+                    s.deleted_honor += 1
                 except NotImplementedError:
-                    pass  # адаптер не поддерживает delete (HONOR CDP) — пропуск
+                    pass
+        return s
