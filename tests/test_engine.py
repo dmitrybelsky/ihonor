@@ -1,5 +1,7 @@
 from ihonor.note import Note
 from ihonor.adapter import InMemoryAdapter
+from ihonor.state_store import StateStore
+from ihonor.engine import SyncEngine
 
 def test_inmemory_crud():
     a = InMemoryAdapter()
@@ -9,3 +11,20 @@ def test_inmemory_crud():
     assert a.get(rid).title == "t2"
     a.delete(rid)
     assert all(n.deleted or n.ext_id != rid for n in a.list()) or a.get(rid) is None
+
+def test_new_honor_note_creates_in_icloud(tmp_path):
+    honor = InMemoryAdapter(); icloud = InMemoryAdapter()
+    honor.create(Note("", "Hello", "body", 1))
+    eng = SyncEngine(honor, icloud, StateStore(str(tmp_path/"s.db")))
+    eng.sync_once()
+    titles = [n.title for n in icloud.list() if not n.deleted]
+    assert "Hello" in titles
+
+def test_changed_honor_updates_icloud(tmp_path):
+    honor = InMemoryAdapter(); icloud = InMemoryAdapter(); st = StateStore(str(tmp_path/"s.db"))
+    hid = honor.create(Note("", "T", "b1", 1))
+    eng = SyncEngine(honor, icloud, st); eng.sync_once()
+    honor.update(hid, Note(hid, "T", "b2", 2))
+    eng.sync_once()
+    icn = [n for n in icloud.list() if not n.deleted and n.title=="T"][0]
+    assert icn.body_text == "b2"
