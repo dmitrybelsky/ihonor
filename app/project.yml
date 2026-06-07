@@ -1,0 +1,51 @@
+name: ihonor
+options:
+  bundleIdPrefix: com.ihonor
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+targets:
+  ihonor:
+    type: application
+    platform: macOS
+    sources:
+      - path: ihonor
+    info:
+      path: ihonor/Info.plist
+      properties:
+        LSUIElement: true
+        CFBundleDisplayName: ihonor
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ihonor.app
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_TESTABILITY: YES
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGNING_ALLOWED: NO
+        ENABLE_HARDENED_RUNTIME: NO
+        SWIFT_VERSION: "5.0"
+  ihonorTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ihonorTests
+    dependencies:
+      - target: ihonor
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ihonor.tests
+        SWIFT_VERSION: "5.0"
+        CODE_SIGNING_ALLOWED: NO
+schemes:
+  ihonor:
+    build:
+      targets:
+        ihonor: all
+        ihonorTests: [test]
+    test:
+      gatherCoverageData: false
+      targets:
+        - ihonorTests
