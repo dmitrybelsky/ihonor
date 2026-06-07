@@ -38,3 +38,17 @@ class SyncEngine:
             elif i_changed and not h_changed:
                 self.honor.update(p.honor_id, ino)
                 self.store.upsert(Pair(p.honor_id, p.icloud_id, ih, ih))
+            elif h_changed and i_changed:
+                conflict = Note("", hn.title + " (conflict)", hn.body_text, hn.mtime)
+                self.icloud.create(conflict)
+                self.store.upsert(Pair(p.honor_id, p.icloud_id, hh, ih))
+
+        h_ids = {n.ext_id for n in self.honor.list() if not n.deleted}
+        i_ids = {n.ext_id for n in self.icloud.list() if not n.deleted}
+        for p in self.store.all():
+            h_gone = p.honor_id not in h_ids
+            i_gone = p.icloud_id not in i_ids
+            if h_gone and not i_gone:
+                self.icloud.delete(p.icloud_id); self.store.remove(p.honor_id)
+            elif i_gone and not h_gone:
+                self.honor.delete(p.honor_id); self.store.remove(p.honor_id)
