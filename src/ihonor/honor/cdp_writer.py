@@ -16,6 +16,7 @@ NB: websocket подключение требует suppress_origin=True (Electr
 from __future__ import annotations
 
 import json
+import subprocess
 import time
 
 import requests
@@ -148,25 +149,58 @@ class HonorCdpWriter:
         )
         time.sleep(settle)
 
+    def _screen_geom(self) -> dict:
+        return json.loads(self._eval("JSON.stringify({sx:window.screenX,sy:window.screenY})"))
+
+    def _card_vp(self, title: str):
+        jt = json.dumps(title)
+        box = self._eval(
+            "(()=>{const c=[...document.querySelectorAll('.noteCardItem')]"
+            f".find(e=>(e.innerText||'').split('\\n')[0].trim()==={jt});"
+            "if(!c)return null;const r=c.getBoundingClientRect();"
+            "return JSON.stringify({vx:r.left+r.width/2,vy:r.top+r.height/2});})()"
+        )
+        return json.loads(box) if box else None
+
+    def _visible_delete_vp(self):
+        d = self._eval(
+            "(()=>{const e=[...document.querySelectorAll('*')].find(x=>x.offsetParent!==null"
+            "&&x.children.length===0&&/^(Delete|Удалить)$/i.test((x.innerText||'').trim()));"
+            "if(!e)return null;const r=e.getBoundingClientRect();"
+            "return JSON.stringify({vx:r.left+r.width/2,vy:r.top+r.height/2});})()"
+        )
+        return json.loads(d) if d else None
+
     def delete_note(self, title: str, settle: float = 2.0) -> None:
-        """Открыть заметку по заголовку, удалить (кнопка title=Delete + возможный confirm)."""
-        if not self.open_note_by_title(title):
-            raise RuntimeError(f"заметка не найдена: {title}")
-        clicked = self._eval(
-            "(()=>{const b=[...document.querySelectorAll('[title=\"Delete\"]')]"
-            ".find(e=>!(e.className||'').toString().includes('disabled'));"
-            "if(!b)return false;b.click();return true;})()"
-        )
-        if clicked is not True:
-            raise RuntimeError("кнопка Delete не найдена/неактивна")
-        time.sleep(0.8)
-        # подтверждение, если есть диалог (кнопка Delete/OK/Удалить в модалке)
-        self._eval(
-            "(()=>{const btns=[...document.querySelectorAll('button,[class*=btn],[role=button]')]"
-            ".filter(e=>e.offsetParent!==null);"
-            "const c=btns.find(e=>/^(delete|ok|удалить|confirm)$/i.test((e.innerText||'').trim()));"
-            "if(c)c.click();return!!c;})()"
-        )
+        """Удалить заметку реальными OS-кликами (cliclick): синтетика/CDP-клик delete не триггерит.
+
+        Рецепт (доказан): activate → real right-click карточки (контекст-меню) →
+        cliclick по пункту Delete → cliclick по confirm-Delete (диалог) → удалено+синк.
+        Требует cliclick (brew install cliclick) + frameless-окно (viewport origin = screenX/Y).
+        """
+        subprocess.run(["osascript", "-e", 'tell application "HonorWorkStation" to activate'],
+                       capture_output=True)
+        time.sleep(0.4)
+        g = self._screen_geom()
+        card = self._card_vp(title)
+        if not card:
+            raise RuntimeError(f"карточка не найдена: {title}")
+
+        def real_click(vp, button="left"):
+            x = round(g["sx"] + vp["vx"]); y = round(g["sy"] + vp["vy"])
+            flag = "rc" if button == "right" else "c"
+            subprocess.run(["cliclick", f"{flag}:{x},{y}"], capture_output=True)
+
+        real_click(card, "right")           # контекст-меню
+        time.sleep(0.6)
+        d = self._visible_delete_vp()
+        if not d:
+            raise RuntimeError("пункт Delete в меню не найден")
+        real_click(d)                        # клик Delete
+        time.sleep(0.9)
+        conf = self._visible_delete_vp()     # confirm-диалог (тоже 'Delete')
+        if conf:
+            real_click(conf)
         time.sleep(settle)
 
     def _click_center(self, selector: str) -> bool:
