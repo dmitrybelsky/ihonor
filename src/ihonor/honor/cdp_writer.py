@@ -63,22 +63,26 @@ class HonorCdpWriter:
         return self._eval(js) is True
 
     def create_note(self, title: str, body: str = "", settle: float = 2.5) -> None:
-        """Создать заметку через UI app (родной путь записи+синка)."""
+        """Создать заметку через UI app (родной путь записи+синка).
+
+        Надёжно (проверено: TABTEST1 чистый title): click newNote → React-set title
+        (native setter + input event; Input.insertText не триггерит React onChange надёжно).
+        Body — best-effort через Tab→insertText; CDP body-ввод хрупок к фокусу/app-state
+        (см. spec риски, hardening TODO).
+        """
         if self._eval(f"(()=>{{const b=document.querySelector('{NEW_NOTE_BTN}');if(!b)return false;b.click();return true;}})()") is not True:
             raise RuntimeError("newNoteButton не найдена")
         time.sleep(1.5)
-        # title: React-textarea -> native setter + input event (insertText не триггерит onChange)
         if not self._set_react_value(TITLE_SEL, title):
             raise RuntimeError("title textarea не найдена")
         time.sleep(0.4)
         if body:
-            # body: фокус contenteditable напрямую (.focus + caret) -> execCommand insertText
-            self._eval(
-                f"(()=>{{const e=document.querySelector('{BODY_SEL}');if(!e)return false;e.focus();"
-                "const r=document.createRange();r.selectNodeContents(e);r.collapse(false);"
-                "const s=getSelection();s.removeAllRanges();s.addRange(r);"
-                "document.execCommand('insertText',false,%r);return true;}})()" % body
-            )
+            for t in ("rawKeyDown", "keyUp"):
+                self._cmd("Input.dispatchKeyEvent", {
+                    "type": t, "key": "Tab", "code": "Tab", "windowsVirtualKeyCode": 9,
+                })
+            time.sleep(0.3)
+            self._cmd("Input.insertText", {"text": body})
         time.sleep(settle)  # автосейв + синк
 
     def close(self) -> None:
