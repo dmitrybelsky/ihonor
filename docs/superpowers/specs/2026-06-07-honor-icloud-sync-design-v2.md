@@ -14,13 +14,15 @@
 - Питон-процесс (launchd) опрашивает обе стороны по интервалу.
 
 ## Реальные механизмы (вскрыты Phase 0, всё доказано)
-### iCloud (headless, ✅)
-- CloudKit Web Services `ckdatabasews`, контейнер `com.apple.notes`, зона `Notes`.
-- Auth: `pyicloud` (Apple ID + 2FA → персист trust-token, далее без 2FA).
-- READ: `POST changes/zone` (пагинация syncToken). title=base64, body=base64(gzip(protobuf)).
-- WRITE: `POST records/modify` create/update(recordChangeTag)/forceDelete. Body = минимальный
-  protobuf (NoteStoreProto→Document→Note{text,attribute_run}) → gzip → base64.
-- Код: `src/ihonor/icloud/*`, `scripts/icloud_*`.
+### iCloud через Apple Notes.app (AppleScript) — ОСНОВНОЙ путь (локально на Mac, ✅)
+- Драйвим локальный **Notes.app по AppleScript** (`osascript`). Apple сам синкает в iCloud-облако
+  (симметрично HONOR: драйвим родной app). Официально, стабильно, без 2FA-токенов и ADP-проблем.
+- CRUD доказан: `count of notes`=10 (= те же что в облаке), `make new note {name,body}` → id
+  (`x-coredata://.../ICNote/pNNN`), `delete note id`, `set body of note id`. ✅
+- body = HTML; canon body_text = strip-HTML. ext_id = note id (стабильный). 
+- АЛЬТЕРНАТИВА (если без Notes.app / headless-сервер): reverse-CloudKit `ckdatabasews`
+  (вскрыто Phase 0: changes/zone + records/modify, protobuf/gzip) — `src/ihonor/icloud/*`,
+  `scripts/icloud_*`. Хрупче; для local-Mac не нужен.
 
 ### HONOR READ (локальная БД, ✅)
 - `~/Library/Containers/com.hihonor.hihonornote/Data/.config/hihonornote/database.sqlite`,

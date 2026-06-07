@@ -391,12 +391,13 @@ git commit -m "feat(engine): conflict-copy + conservative deletes"
 
 ---
 
-## Task 6: iCloud адаптер (обёртка CloudKit в NoteAdapter)
+## Task 6: iCloud адаптер через Apple Notes.app (AppleScript)
 
 **Files:** Create `src/ihonor/adapters/__init__.py`, `src/ihonor/adapters/icloud_adapter.py`
 
-> Использует доказанное: `ihonor.icloud.auth.login` + ckdatabasews changes/zone + records/modify
-> (см. scripts/icloud_discover.py, icloud_write_probe.py). title=base64, body=base64(gzip(protobuf)).
+> Драйвим локальный Notes.app через `osascript`. Apple синкает в iCloud сам. Доказано:
+> list/create/delete/update работают (`count of notes`=10, `make new note`→id, `delete note id`).
+> body = HTML; canon body_text = strip-HTML. ext_id = note id (`x-coredata://.../ICNote/pNNN`).
 
 - [ ] **Step 1: Создать `src/ihonor/adapters/__init__.py`** (пустой)
 ```python
@@ -404,76 +405,48 @@ git commit -m "feat(engine): conflict-copy + conservative deletes"
 
 - [ ] **Step 2: Реализация `src/ihonor/adapters/icloud_adapter.py`**
 ```python
-import base64
-import gzip
+import html
+import re
+import subprocess
 from ihonor.note import Note
-from ihonor.icloud.auth import login
 
-ZONE = {"zoneName": "Notes"}
-
-
-def _varint(n: int) -> bytes:
-    out = b""
-    while True:
-        b = n & 0x7F; n >>= 7
-        out += bytes([b | (0x80 if n else 0)])
-        if not n:
-            return out
+US = "\x1f"  # field sep
+RS = "\x1e"  # record sep
 
 
-def _flen(num: int, payload: bytes) -> bytes:
-    return _varint((num << 3) | 2) + _varint(len(payload)) + payload
+def _osa(script: str) -> str:
+    return subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=True).stdout
 
 
-def _build_body(text: str) -> str:
-    tb = text.encode("utf-8")
-    note = _flen(2, tb) + _flen(5, _varint(8) + _varint(len(text)))  # note_text + attribute_run.length
-    store = _flen(2, _flen(3, note))
-    return base64.b64encode(gzip.compress(store)).decode()
-
-
-def _extract_text(body_b64: str) -> str:
-    try:
-        raw = gzip.decompress(base64.b64decode(body_b64))
-        # текст note лежит после первого field2(LEN) в Note; берём печатаемое до первого ￼
-        s = raw.decode("utf-8", errors="ignore")
-        # грубое извлечение первой текстовой строки
-        return s
-    except Exception:
-        return ""
+def _strip_html(s: str) -> str:
+    s = re.sub(r"<[^>]+>", " ", s)
+    return html.unescape(re.sub(r"\s+", " ", s)).strip()
 
 
 class ICloudAdapter:
-    def __init__(self, apple_id: str, password: str):
-        self._api = login(apple_id, password)
-        self._ck = self._api.get_webservice_url("ckdatabasews")
-        self._params = dict(self._api.params)
-        self._base = f"{self._ck}/database/1/com.apple.notes/production/private"
+    """iCloud через Apple Notes.app (AppleScript). Apple авто-синкает в облако."""
 
     def list(self) -> list[Note]:
-        notes: list[Note] = []
-        tok = None
-        for _ in range(20):
-            r = self._api.session.post(f"{self._base}/changes/zone", params=self._params,
-                                       json={"zones": [{"zoneID": ZONE, "desiredKeys": None, "syncToken": tok}]})
-            z = r.json()["zones"][0]
-            for rec in z.get("records", []):
-                if rec.get("recordType") != "Note":
-                    continue
-                f = rec.get("fields", {})
-                title = ""
-                tv = f.get("TitleEncrypted", {}).get("value", "")
-                try:
-                    title = base64.b64decode(tv).decode("utf-8")
-                except Exception:
-                    pass
-                body = _extract_text(f.get("TextDataEncrypted", {}).get("value", ""))
-                deleted = bool(f.get("Deleted", {}).get("value", 0))
-                mt = f.get("ModificationDate", {}).get("value", 0)
-                notes.append(Note(rec["recordName"], title, body, mt, deleted))
-            tok = z.get("syncToken")
-            if not z.get("moreComing"):
-                break
+        script = (
+            'tell application "Notes"\n'
+            f'set AppleScript\'s text item delimiters to "{US}"\n'
+            'set out to ""\n'
+            'repeat with n in notes\n'
+            f'set out to out & (id of n) & "{US}" & (name of n) & "{US}" & (body of n) & "{RS}"\n'
+            'end repeat\n'
+            'return out\n'
+            'end tell'
+        )
+        raw = _osa(script)
+        notes = []
+        for rec in raw.split(RS):
+            if US not in rec:
+                continue
+            parts = rec.split(US)
+            if len(parts) < 3:
+                continue
+            nid, name, body = parts[0], parts[1], US.join(parts[2:])
+            notes.append(Note(nid.strip(), name, _strip_html(body), 0, False))
         return notes
 
     def get(self, ext_id: str) -> Note | None:
@@ -482,56 +455,44 @@ class ICloudAdapter:
                 return n
         return None
 
-    def _modify(self, op: dict) -> dict:
-        r = self._api.session.post(f"{self._base}/records/modify", params=self._params,
-                                   json={"operations": [op], "zoneID": ZONE})
-        r.raise_for_status()
-        return r.json()["records"][0]
-
     def create(self, note: Note) -> str:
-        import time, uuid
-        now = int(time.time() * 1000)
-        folder = {"recordName": "DefaultFolder-CloudKit", "action": "VALIDATE", "zoneID": ZONE}
-        rec = self._modify({"operationType": "create", "record": {
-            "recordName": str(uuid.uuid4()).upper(), "recordType": "Note",
-            "fields": {
-                "TitleEncrypted": {"value": base64.b64encode(note.title.encode()).decode(), "type": "ENCRYPTED_BYTES"},
-                "TextDataEncrypted": {"value": _build_body(note.body_text), "type": "ENCRYPTED_BYTES"},
-                "CreationDate": {"value": now, "type": "TIMESTAMP"},
-                "ModificationDate": {"value": now, "type": "TIMESTAMP"},
-                "Deleted": {"value": 0, "type": "INT64"},
-                "Folder": {"value": folder, "type": "REFERENCE"},
-                "Folders": {"value": [folder], "type": "REFERENCE_LIST"},
-            }}})
-        return rec["recordName"]
+        body = f"<div><b>{html.escape(note.title)}</b></div><div>{html.escape(note.body_text)}</div>"
+        script = (
+            'tell application "Notes"\n'
+            f'set n to make new note with properties {{name:"{_esc(note.title)}", body:"{_esc(body)}"}}\n'
+            'return id of n\n'
+            'end tell'
+        )
+        return _osa(script).strip()
 
     def update(self, ext_id: str, note: Note) -> None:
-        import time
-        cur = self._api.session.post(f"{self._base}/records/lookup", params=self._params,
-                                     json={"records": [{"recordName": ext_id}], "zoneID": ZONE}).json()["records"][0]
-        self._modify({"operationType": "update", "record": {
-            "recordName": ext_id, "recordChangeTag": cur["recordChangeTag"], "recordType": "Note",
-            "fields": {
-                "TitleEncrypted": {"value": base64.b64encode(note.title.encode()).decode(), "type": "ENCRYPTED_BYTES"},
-                "TextDataEncrypted": {"value": _build_body(note.body_text), "type": "ENCRYPTED_BYTES"},
-                "ModificationDate": {"value": int(time.time() * 1000), "type": "TIMESTAMP"},
-            }}})
+        body = f"<div><b>{html.escape(note.title)}</b></div><div>{html.escape(note.body_text)}</div>"
+        script = (
+            'tell application "Notes"\n'
+            f'set body of note id "{_esc(ext_id)}" to "{_esc(body)}"\n'
+            'end tell'
+        )
+        _osa(script)
 
     def delete(self, ext_id: str) -> None:
-        self._modify({"operationType": "forceDelete", "record": {"recordName": ext_id}})
+        _osa(f'tell application "Notes" to delete note id "{_esc(ext_id)}"')
+
+
+def _esc(s: str) -> str:
+    return s.replace("\\", "\\\\").replace('"', '\\"')
 ```
 
-- [ ] **Step 3: Smoke (реальный аккаунт, .env заполнен)**
+- [ ] **Step 3: Smoke (Notes.app доступен)**
 Run:
 ```bash
-uv run python -c "from ihonor.adapters.icloud_adapter import ICloudAdapter; from ihonor.config import Config; c=Config.from_env(); a=ICloudAdapter(c.icloud_apple_id,c.icloud_password); print('icloud notes:',len([n for n in a.list() if not n.deleted]))"
+uv run python -c "from ihonor.adapters.icloud_adapter import ICloudAdapter; a=ICloudAdapter(); print('icloud notes:',len(a.list())); rid=a.create(__import__('ihonor.note',fromlist=['Note']).Note('','smoke-icloud','body via applescript',1)); print('created',rid[:40]); a.delete(rid); print('deleted')"
 ```
-Expected: печатает число заметок (>0). (2FA один раз через env ICLOUD_2FA_CODE при первом логине.)
+Expected: печатает число заметок, создаёт+удаляет smoke-заметку (видно в Notes.app кратко).
 
 - [ ] **Step 4: Commit**
 ```bash
 git add src/ihonor/adapters/__init__.py src/ihonor/adapters/icloud_adapter.py
-git commit -m "feat(adapter): iCloud CloudKit NoteAdapter"
+git commit -m "feat(adapter): iCloud via Apple Notes.app (AppleScript)"
 ```
 
 ---
@@ -672,7 +633,6 @@ git commit -m "feat(adapter): HONOR NoteAdapter (read + CDP create)"
 - [ ] **Step 1: Реализация `src/ihonor/runner.py`**
 ```python
 import os
-from ihonor.config import Config
 from ihonor.state_store import StateStore
 from ihonor.engine import SyncEngine
 from ihonor.adapters.icloud_adapter import ICloudAdapter
@@ -683,9 +643,8 @@ STATE_DB = os.path.expanduser("~/.ihonor/state.db")
 
 def run_once(cdp_port: int = 9222) -> None:
     os.makedirs(os.path.dirname(STATE_DB), exist_ok=True)
-    cfg = Config.from_env()
     honor = HonorAdapter(cdp_port)
-    icloud = ICloudAdapter(cfg.icloud_apple_id, cfg.icloud_password)
+    icloud = ICloudAdapter()  # Apple Notes.app via AppleScript
     engine = SyncEngine(honor, icloud, StateStore(STATE_DB))
     engine.sync_once()
     print("[ihonor] sync_once done")
