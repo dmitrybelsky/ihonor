@@ -46,6 +46,8 @@ class HonorCdpWriter:
         while True:
             msg = json.loads(self._ws.recv())
             if msg.get("id") == self._id:
+                if "error" in msg:  # CDP-ошибка протокола — не глотаем (иначе пустой результат)
+                    raise RuntimeError(f"CDP {method} error: {msg['error']}")
                 return msg.get("result", {})
 
     def _eval(self, expr: str):
@@ -140,6 +142,10 @@ class HonorCdpWriter:
         if not selected:  # выделение пустое — повтор после паузы
             time.sleep(0.5)
             selected = self._eval(sel)
+        if not selected:
+            # пустое выделение → insertText допишет в каретку (append), а не заменит.
+            # Отказываемся, чтобы НЕ испортить заметку (движок запишет в ошибки).
+            raise RuntimeError("update_note: пустое выделение body — отказ (иначе append вместо replace)")
         self._cmd("Input.insertText", {"text": new_body})
         time.sleep(0.4)
         self._eval(

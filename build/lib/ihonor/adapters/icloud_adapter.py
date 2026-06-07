@@ -14,13 +14,19 @@ RS = "\x1e"  # record sep
 
 
 def _osa(script: str) -> str:
+    # timeout: застрявший/ждущий разрешения osascript иначе вешает весь синк.
     return subprocess.run(
-        ["osascript", "-e", script], capture_output=True, text=True, check=True
+        ["osascript", "-e", script], capture_output=True, text=True, check=True, timeout=60
     ).stdout
 
 
 def _esc(s: str) -> str:
-    return s.replace("\\", "\\\\").replace('"', '\\"')
+    # Экранируем для AppleScript-строкового литерала: \, ", и управляющие \n \r \t
+    # (сырой перевод строки в "..." ломает синтаксис).
+    return (
+        s.replace("\\", "\\\\").replace('"', '\\"')
+        .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+    )
 
 
 def _strip_html(s: str) -> str:

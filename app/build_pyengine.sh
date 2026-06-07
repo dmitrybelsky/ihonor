@@ -17,7 +17,8 @@ if [ -x "$DEST/bin/python3" ] && "$DEST/bin/python3" -c "import apsw, requests, 
 fi
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT  # чистим temp при любом выходе
+# чистим temp + неудавшийся staging при любом выходе ($DEST.old НЕ трогаем — это бэкап для восстановления)
+trap 'rm -rf "$TMP" "$DEST.new"' EXIT
 
 echo "→ скачиваю python-build-standalone"
 curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 "$PBS_URL" -o "$TMP/py.tar.gz"

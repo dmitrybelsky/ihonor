@@ -31,7 +31,14 @@ struct EngineBridge {
         do { try proc.run() } catch { throw EngineError.launchFailed("\(error)") }
         // Watchdog: зависший движок (стак CDP-сокет / Accessibility-промпт / залипший
         // AppleScript) иначе клинит синк навсегда (status застрянет .running). Убиваем по дедлайну.
-        let watchdog = DispatchWorkItem { if proc.isRunning { proc.terminate() } }
+        let watchdog = DispatchWorkItem {
+            guard proc.isRunning else { return }
+            proc.terminate()  // SIGTERM
+            // эскалация: процесс, игнорящий SIGTERM, добиваем SIGKILL через 5с
+            DispatchQueue.global().asyncAfter(deadline: .now() + 5) {
+                if proc.isRunning { kill(proc.processIdentifier, SIGKILL) }
+            }
+        }
         DispatchQueue.global().asyncAfter(deadline: .now() + 240, execute: watchdog)
         defer { watchdog.cancel() }
         // Читаем stderr в фоне, чтобы не словить deadlock на полном pipe-буфере,
@@ -48,9 +55,11 @@ struct EngineBridge {
         // Но ненулевой exit с НЕ-JSON stdout (traceback/print до краха) = реальный сбой:
         // бросаем со stderr, не отдаём мусор в JSONDecoder.
         if proc.terminationStatus != 0 {
-            let first = data.first
-            let looksJSON = first == 0x7B || first == 0x5B  // '{' или '['
-            if !looksJSON {
+            // runner на ошибке пишет ПОЛНЫЙ валидный error-JSON и exit(1) — легитимно.
+            // Валидируем именно парсингом (не первым символом): обрезанный JSON от
+            // watchdog-kill/краха не пройдёт → отдаём stderr, а не мусор в декодер.
+            let valid = (try? JSONSerialization.jsonObject(with: data)) != nil
+            if !valid {
                 throw EngineError.nonZero(proc.terminationStatus,
                                           String(data: errData, encoding: .utf8) ?? "")
             }

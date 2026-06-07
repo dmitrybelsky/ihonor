@@ -80,7 +80,9 @@ final class SyncController: ObservableObject {
     private func notify(_ title: String, _ body: String) {
         let c = UNMutableNotificationContent(); c.title = title; c.body = body
         let req = UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil)
-        UNUserNotificationCenter.current().add(req)
+        UNUserNotificationCenter.current().add(req) { error in
+            if let error { NSLog("ihonor: notify failed: \(error)") }
+        }
     }
 
     func requestNotificationAuth() {

@@ -21,12 +21,14 @@ targets:
         MARKETING_VERSION: "0.1"
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: NO
-        ENABLE_TESTABILITY: YES
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGNING_ALLOWED: NO
         ENABLE_HARDENED_RUNTIME: NO
         SWIFT_VERSION: "5.0"
+      configs:
+        Debug:
+          ENABLE_TESTABILITY: YES  # @testable только в Debug, не течёт в Release
     # NB: для notarization/hardened-runtime pyengine надо собирать ДО подписи (или
     # переподписывать .app после). Сейчас ad-hoc/unsigned — postBuild годится.
     postBuildScripts:

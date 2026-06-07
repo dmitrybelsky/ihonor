@@ -81,6 +81,7 @@ struct LogsTab: View {
 struct PairsTab: View {
     @State private var pairs: [PairRow] = []
     @State private var err: String?
+    @State private var loading = false
     var body: some View {
         VStack {
             if let err { Text(err).foregroundStyle(.red) }
@@ -95,12 +96,15 @@ struct PairsTab: View {
         .toolbar { Button("Обновить", action: reload) }
     }
     private func reload() {
+        guard !loading else { return }  // не плодим параллельные subprocess при частых тапах
+        loading = true
         // EngineBridge.pairs() запускает python-subprocess — не на MainActor (иначе фриз UI).
         Task {
             let result = await Task.detached { () -> Result<[PairRow], Error> in
                 do { return .success(try EngineBridge.pairs()) }
                 catch { return .failure(error) }
             }.value
+            loading = false
             switch result {
             case .success(let p): pairs = p; err = nil
             case .failure(let e): err = "Ошибка загрузки пар: \(String("\(e)".prefix(200)))"
