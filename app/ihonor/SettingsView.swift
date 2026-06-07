@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 struct MainWindowView: View {
     @ObservedObject var ctrl: SyncController
@@ -44,10 +46,27 @@ struct LogsTab: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear(perform: reload)
-        .toolbar { Button("Обновить", action: reload) }
+        .toolbar {
+            Button("Обновить", action: reload)
+            Button("Экспорт…", action: exportLog)
+            Button("Показать в Finder", action: revealInFinder)
+        }
     }
     private func reload() {
         text = (try? String(contentsOfFile: logPath, encoding: .utf8)) ?? ""
+    }
+    private func exportLog() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "ihonor-log.txt"
+        panel.allowedContentTypes = [.plainText]
+        panel.canCreateDirectories = true
+        NSApp.activate(ignoringOtherApps: true)  // accessory-app: panel на перед
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let content = (try? String(contentsOfFile: logPath, encoding: .utf8)) ?? text
+        try? content.write(to: url, atomically: true, encoding: .utf8)
+    }
+    private func revealInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: logPath)])
     }
 }
 
