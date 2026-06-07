@@ -5,7 +5,18 @@
 ## Канал «веб cloud.hihonor.com» — ТУПИК
 - Портал выставляет только «Поиск устройства», раздела заметок на вебе нет. Отвергнут.
 
-## РАБОЧИЙ КАНАЛ: локальный клиент HonorWorkStation (macOS) ✅
+## 🎯 ИТОГ: HONOR WRITE РЕШЁН через CDP-drive (двусторонка достижима!)
+Внешний headless-write в облако заблокирован (enrollment+token+DB-integrity, см. ниже), НО
+**драйв самого HonorWorkStation по Chrome DevTools Protocol работает** — app пишет родным путём.
+- Запуск: `open -a HonorWorkStation --args --remote-debugging-port=9222` (залогинен).
+- CDP: ws подключение (suppress_origin=True), Runtime.evaluate + Input.insertText.
+- Создание: клик `.newNoteButton` → заголовок в `.noteTitleText` (textarea) → тело в
+  `.app-note-editor-01` (contenteditable) → автосейв → app синкает в облако+телефон. ✅ ПРОВЕРЕНО.
+- Модуль: `src/ihonor/honor/cdp_writer.py` (create_note(title, body)). ✅ работает end-to-end.
+- Требует: запущенный залогиненный HonorWorkStation + debug-порт (приемлемо — он и так клиент).
+- TODO для полноты: update (найти заметку в списке→открыть→правка) + delete (контекст-меню).
+
+## RAБОЧИЙ КАНАЛ READ: локальный клиент HonorWorkStation (macOS) ✅
 Пользователь имеет `HonorWorkStation.app` (bundle `com.hihonor.hihonornote`) —
 Electron-клиент, который синхронизирует заметки HONOR Cloud в локальную БД.
 Это синхронизирующий клиент → используем его как точку интеграции (без mitmproxy/телефона).

@@ -10,6 +10,7 @@ dependencies = [
     "requests>=2.31",
     "gmssl>=3.2",
     "cryptography>=42",
+    "websocket-client>=1.6",
 ]
 
 [project.optional-dependencies]

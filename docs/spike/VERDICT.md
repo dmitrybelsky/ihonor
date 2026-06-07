@@ -5,7 +5,7 @@
 | Сторона | list | get | create | update | delete | headless? |
 |---------|------|-----|--------|--------|---------|-----------|
 | iCloud  |  ✅  | ✅  |   ✅   |   ✅   |   ✅    |    ✅     |
-| HONOR   |  ✅  | ✅  |   ✅** |   ✅** |   ✅**  |   ✅      |
+| HONOR   |  ✅  | ✅  |  ✅*** |  (CDP) |  (CDP)  |   ✅      |
 
 \*\* HONOR write-протокол ВСКРЫТ (REST `space-dra.../sync/notepad/note/upstream`,
 Bearer-auth, SM2/SM4 контент, свой EC-ключ → keystore не нужен). Поймана реальная
@@ -52,3 +52,7 @@ Data Sync (заметки) включены, дождаться загрузки
 - HONOR: зависимость от запущенного HonorWorkStation как транспорта; запись в живую БД
   (конфликты/версии `dirty`/`max_version`); обновления приложения могут менять схему/ключ.
 - Mapping ID между системами; conflict-copy на двусторонних правках.
+
+
+## ОБНОВЛЕНИЕ: HONOR write РЕШЁН через CDP-drive
+*** create доказан: драйв HonorWorkStation по Chrome DevTools Protocol (клик newNoteButton + insertText title/body) → app пишет родным путём (своя крипта+upload) → синк на телефон. Внешний headless-write в облако заблокирован (enrollment/token/DB-integrity), но app-drive обходит всё. cdp_writer.py. update/delete — доработать (UI-навигация). ДВУСТОРОНКА HONOR<->iCloud ДОСТИЖИМА.

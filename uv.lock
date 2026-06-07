@@ -559,6 +559,7 @@ dependencies = [
     { name = "pyicloud" },
     { name = "python-dotenv" },
     { name = "requests" },
+    { name = "websocket-client" },
 ]
 
 [package.optional-dependencies]
@@ -578,6 +579,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "requests", specifier = ">=2.31" },
+    { name = "websocket-client", specifier = ">=1.6" },
 ]
 provides-extras = ["dev"]
 
@@ -1654,6 +1656,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/af/44/c833e6b746ffb654e9abacf7ad6c2480a9c8c42e9637c1ae849964fb4dde/wcwidth-0.8.0.tar.gz", hash = "sha256:68a882ff6d14e3d14e0cae590b96a0551be64ce4905408112a8254434a1bdf69", size = 1305357, upload-time = "2026-06-05T21:19:35.667Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/17/c68b6cbcfeadbf420b3c3edaf8fda51335bc9c38732adb2d3ba8984dc607/wcwidth-0.8.0-py3-none-any.whl", hash = "sha256:8c75e6099cefd197c4bcc67a486f70b5dbc68f997c05f34a811d853910450d64", size = 324935, upload-time = "2026-06-05T21:19:33.999Z" },
+]
+
+[[package]]
+name = "websocket-client"
+version = "1.9.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/41/aa4bf9664e4cda14c3b39865b12251e8e7d239f4cd0e3cc1b6c2ccde25c1/websocket_client-1.9.0.tar.gz", hash = "sha256:9e813624b6eb619999a97dc7958469217c3176312b3a16a4bd1bc7e08a46ec98", size = 70576, upload-time = "2025-10-07T21:16:36.495Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/34/db/b10e48aa8fff7407e67470363eac595018441cf32d5e1001567a7aeba5d2/websocket_client-1.9.0-py3-none-any.whl", hash = "sha256:af248a825037ef591efbf6ed20cc5faa03d3b47b9e5a2230a529eeee1c1fc3ef", size = 82616, upload-time = "2025-10-07T21:16:34.951Z" },
 ]
 
 [[package]]
