@@ -54,14 +54,21 @@ def main() -> None:
         result = {"ts": time.time(), "ok": False, "errors": [f"{type(e).__name__}: {e}"]}
         setup_logging().exception("sync_once failed")
         if as_json:
-            json.dump(result, sys.stdout)
-            sys.exit(1)
+            _emit_json_and_exit(result, 1)
         print(f"[ihonor] FAILED: {result['errors'][0]}")
         sys.exit(1)
     if as_json:
-        json.dump(result, sys.stdout)
+        _emit_json_and_exit(result, 0)
     else:
         print(f"[ihonor] sync_once done: {result}")
+
+
+def _emit_json_and_exit(result: dict, code: int) -> None:
+    """Печатает JSON и завершает через os._exit, минуя teardown нативного dylib
+    HONOR (он печатает 'Library cleaned up.' в stdout при выгрузке)."""
+    sys.stdout.write(json.dumps(result))
+    sys.stdout.flush()
+    os._exit(code)
 
 
 if __name__ == "__main__":

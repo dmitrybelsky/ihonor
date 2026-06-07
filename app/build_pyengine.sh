@@ -6,8 +6,12 @@ DEST="${1:?usage: build_pyengine.sh <dest-dir>}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 PBS_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.12.7+20241016-aarch64-apple-darwin-install_only.tar.gz"
 
-if [ -x "$DEST/bin/python3" ] && "$DEST/bin/python3" -c "import ihonor, apsw" 2>/dev/null; then
-  echo "pyengine уже собран: $DEST"; exit 0
+# Python уже распакован — обновляем только пакет ihonor (исходники могли поменяться),
+# не качаем интерпретатор заново.
+if [ -x "$DEST/bin/python3" ] && "$DEST/bin/python3" -c "import apsw" 2>/dev/null; then
+  echo "→ обновляю ihonor в существующем pyengine"
+  "$DEST/bin/python3" -m pip install --force-reinstall --no-deps --no-warn-script-location "$REPO"
+  echo "✓ pyengine обновлён: $DEST/bin/python3"; exit 0
 fi
 
 TMP="$(mktemp -d)"

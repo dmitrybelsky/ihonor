@@ -3,10 +3,30 @@
 Без хардкода секретов: enkey читается с диска, пароль вычисляется нативной AEAD
 из бандла HonorWorkStation (их же крипто). Вскрыто Phase 0 (EncryService.getDBSecretKey).
 """
+import contextlib
 import ctypes
 import os
 import plistlib
 import subprocess
+import sys
+
+
+@contextlib.contextmanager
+def _suppress_c_stdout():
+    """Глушит stdout на уровне fd 1 (C printf): нативный dylib HONOR печатает
+    'Library initialized.' при загрузке — это ломает машинный JSON-вывод runner'а.
+    Python-level redirect не ловит C-printf, нужен dup2 на /dev/null.
+    """
+    sys.stdout.flush()
+    saved = os.dup(1)
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    try:
+        os.dup2(devnull, 1)
+        os.close(devnull)
+        yield
+    finally:
+        os.dup2(saved, 1)
+        os.close(saved)
 
 APP = "/Applications/HonorWorkStation.app/Contents"
 DYLIB = f"{APP}/Frameworks/libSecurityKitNodejs.dylib"
@@ -37,16 +57,17 @@ def read_enkey() -> str:
 def derive_db_password() -> str:
     enkey_hex = read_enkey()
     os.environ.setdefault("DYLD_LIBRARY_PATH", f"{APP}/Frameworks:{APP}/OfficeCenter")
-    lib = ctypes.CDLL(DYLIB)
-    fn = lib.honorcloud_aead_decrypt
-    fn.restype = ctypes.c_int
-    fn.argtypes = [
-        ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_int,
-        ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p,
-    ]
     enkey = bytes.fromhex(enkey_hex)
     out = ctypes.create_string_buffer(len(enkey))
-    fn(NID, enkey, len(enkey), None, 0, b"\x00" * 16, AES_KEY, KEY_MATA, 16, out)
+    with _suppress_c_stdout():  # dylib печатает 'Library initialized.' в stdout
+        lib = ctypes.CDLL(DYLIB)
+        fn = lib.honorcloud_aead_decrypt
+        fn.restype = ctypes.c_int
+        fn.argtypes = [
+            ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_int,
+            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p,
+        ]
+        fn(NID, enkey, len(enkey), None, 0, b"\x00" * 16, AES_KEY, KEY_MATA, 16, out)
     return out.raw.rstrip(b"\x00").decode("utf-8")
 
 
