@@ -47,7 +47,7 @@ def read_enkey() -> str:
         with open(PREF_PLIST, "rb") as f:
             pref = plistlib.load(f)
         uk = (pref.get("Note") or {}).get("Userkey")
-        if uk and len(uk) == 32:
+        if uk and re.fullmatch(r"[0-9a-fA-F]{32}", uk):  # как в config.xml-пути
             return uk
     except (FileNotFoundError, KeyError, plistlib.InvalidFileException):
         pass  # нет/битый plist → фоллбэк на config.xml (ожидаемо)

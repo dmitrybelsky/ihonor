@@ -5,6 +5,8 @@ from ihonor.adapter import NoteAdapter
 from ihonor.note import Note, content_hash
 from ihonor.state_store import StateStore, Pair
 
+_MAX_HONOR_UPDATE_RETRIES = 3  # после стольких no-op honor.update принимаем дивергенцию
+
 
 @dataclass
 class SyncStats:
@@ -95,12 +97,22 @@ class SyncEngine:
                     self.honor.update(p.honor_id, ino)
                     hh2 = self._readback_hash(self.honor, p.honor_id, ih)
                     if hh2 == p.hash_honor:
-                        # HONOR-контент не изменился → запись не сработала (CDP-write ненадёжен).
-                        # Пару всё равно обновляем (хешем реального состояния), чтобы НЕ зациклить.
-                        s.errors.append(f"honor.update({p.honor_id}): no-op (контент не изменился)")
+                        # Запись не сработала (HONOR CDP-write ненадёжен/append-only).
+                        fails = p.fails + 1
+                        if fails < _MAX_HONOR_UPDATE_RETRIES:
+                            # СОХРАНЯЕМ старый icloud-хеш → ретрай на след. синке (правка не теряется)
+                            s.errors.append(
+                                f"honor.update({p.honor_id}): no-op, ретрай {fails}/{_MAX_HONOR_UPDATE_RETRIES}")
+                            self.store.upsert(Pair(p.honor_id, p.icloud_id, hh2, p.hash_icloud, fails))
+                        else:
+                            # ретраи исчерпаны → принимаем дивергенцию (не спамим), стойкая ошибка
+                            s.errors.append(
+                                f"honor.update({p.honor_id}): no-op после {fails} попыток — "
+                                f"HONOR-правка не применилась, дивергенция")
+                            self.store.upsert(Pair(p.honor_id, p.icloud_id, hh2, ih, fails))
                     else:
                         s.updated_honor += 1
-                    self.store.upsert(Pair(p.honor_id, p.icloud_id, hh2, ih))
+                        self.store.upsert(Pair(p.honor_id, p.icloud_id, hh2, ih))  # fails=0 (успех)
                 except Exception as e:  # noqa: BLE001 — HONOR CDP-write может реально упасть
                     s.errors.append(f"honor.update({p.honor_id}): {e}")
             elif h_changed and i_changed:
@@ -108,11 +120,16 @@ class SyncEngine:
                     # Обе стороны независимо пришли к ОДНОМУ контенту → не конфликт.
                     self.store.upsert(Pair(p.honor_id, p.icloud_id, hh, ih))
                     continue
+                conflict_title = hn.title + " (conflict)"
+                if any(n.title == conflict_title for n in i_notes.values()):
+                    # копия с таким заголовком уже есть → не плодим дубликаты, сводим пару
+                    self.store.upsert(Pair(p.honor_id, p.icloud_id, hh, ih))
+                    continue
                 # Двусторонняя правка → conflict-copy на iCloud. Копия не пэрится здесь:
                 # следующий синк подхватит её как новую и распространит на HONOR (один раз,
                 # без зацикливания — хеши пары обновлены до текущих значений).
                 try:
-                    conflict = Note("", hn.title + " (conflict)", hn.body_text, hn.mtime)
+                    conflict = Note("", conflict_title, hn.body_text, hn.mtime)
                     self.icloud.create(conflict)
                     self.store.upsert(Pair(p.honor_id, p.icloud_id, hh, ih))
                     s.conflicts += 1

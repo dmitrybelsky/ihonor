@@ -4,7 +4,12 @@ set -euo pipefail
 
 DEST="${1:?usage: build_pyengine.sh <dest-dir>}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-PBS_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.12.7+20241016-aarch64-apple-darwin-install_only.tar.gz"
+case "$(uname -m)" in
+  arm64|aarch64) PBS_ARCH="aarch64-apple-darwin" ;;
+  x86_64)        PBS_ARCH="x86_64-apple-darwin" ;;
+  *) echo "✗ неподдерживаемая архитектура: $(uname -m)"; exit 1 ;;
+esac
+PBS_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.12.7+20241016-${PBS_ARCH}-install_only.tar.gz"
 
 # Фаст-путь: python+apsw+ihonor уже на месте → обновляем только пакет ihonor
 # (исходники могли поменяться) и доустанавливаем недостающие зависимости.

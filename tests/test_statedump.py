@@ -16,4 +16,4 @@ def test_statedump_emits_pairs_json(tmp_path):
     )
     data = json.loads(out)
     assert data == [{"honor_id": "h1", "icloud_id": "i1",
-                     "hash_honor": "ha", "hash_icloud": "ia"}]
+                     "hash_honor": "ha", "hash_icloud": "ia", "fails": 0}]
