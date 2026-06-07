@@ -40,7 +40,22 @@ class HonorAdapter:
         return ""
 
     def update(self, ext_id: str, note: Note) -> None:
-        raise NotImplementedError("HONOR update — Task 10 (CDP UI-навигация)")
+        cur = self.get(ext_id)
+        title = cur.title if cur else note.title
+        w = HonorCdpWriter(self._port)
+        w.connect()
+        try:
+            w.update_note(title, note.body_text)
+        finally:
+            w.close()
 
     def delete(self, ext_id: str) -> None:
-        raise NotImplementedError("HONOR delete — Task 10 (CDP контекст-меню)")
+        cur = self.get(ext_id)
+        if not cur:
+            return
+        w = HonorCdpWriter(self._port)
+        w.connect()
+        try:
+            w.delete_note(cur.title)
+        finally:
+            w.close()

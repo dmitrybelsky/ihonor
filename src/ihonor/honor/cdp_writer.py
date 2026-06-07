@@ -91,6 +91,69 @@ class HonorCdpWriter:
         )
         time.sleep(settle)  # автосейв + синк
 
+    def open_note_by_title(self, title: str) -> bool:
+        """Открыть/выделить заметку в списке по точному заголовку (клик по карточке)."""
+        import json as _json
+        box = self._eval(
+            "(()=>{const c=[...document.querySelectorAll('.noteCardItem')]"
+            ".find(e=>(e.innerText||'').split('\\n')[0].trim()===%r);"
+            "if(!c)return null;const r=c.getBoundingClientRect();"
+            "return JSON.stringify({x:r.left+r.width/2,y:r.top+18});})()" % title
+        )
+        if not box:
+            return False
+        c = _json.loads(box)
+        for ev_type in ("mousePressed", "mouseReleased"):
+            self._cmd("Input.dispatchMouseEvent", {
+                "type": ev_type, "x": c["x"], "y": c["y"], "button": "left", "clickCount": 1,
+            })
+        time.sleep(0.8)
+        return True
+
+    def update_note(self, title: str, new_body: str, settle: float = 2.5) -> None:
+        """Открыть заметку по заголовку, заменить тело."""
+        if not self.open_note_by_title(title):
+            raise RuntimeError(f"заметка не найдена в списке: {title}")
+        if not self._click_center(BODY_SEL):
+            raise RuntimeError("body editor не найден")
+        time.sleep(0.3)
+        # выделить ВСЁ содержимое body (Selection API) -> insertText заменит выделенное
+        self._eval(
+            f"(()=>{{const e=document.querySelector('{BODY_SEL}');if(!e)return false;e.focus();"
+            "const r=document.createRange();r.selectNodeContents(e);"
+            "const s=getSelection();s.removeAllRanges();s.addRange(r);return true;}})()"
+        )
+        time.sleep(0.2)
+        self._cmd("Input.insertText", {"text": new_body})
+        time.sleep(0.4)
+        self._eval(
+            f"(()=>{{const e=document.querySelector('{BODY_SEL}');if(e){{"
+            "e.dispatchEvent(new Event('blur',{bubbles:true}));"
+            "e.dispatchEvent(new Event('focusout',{bubbles:true}));}return true;})()"
+        )
+        time.sleep(settle)
+
+    def delete_note(self, title: str, settle: float = 2.0) -> None:
+        """Открыть заметку по заголовку, удалить (кнопка title=Delete + возможный confirm)."""
+        if not self.open_note_by_title(title):
+            raise RuntimeError(f"заметка не найдена: {title}")
+        clicked = self._eval(
+            "(()=>{const b=[...document.querySelectorAll('[title=\"Delete\"]')]"
+            ".find(e=>!(e.className||'').toString().includes('disabled'));"
+            "if(!b)return false;b.click();return true;})()"
+        )
+        if clicked is not True:
+            raise RuntimeError("кнопка Delete не найдена/неактивна")
+        time.sleep(0.8)
+        # подтверждение, если есть диалог (кнопка Delete/OK/Удалить в модалке)
+        self._eval(
+            "(()=>{const btns=[...document.querySelectorAll('button,[class*=btn],[role=button]')]"
+            ".filter(e=>e.offsetParent!==null);"
+            "const c=btns.find(e=>/^(delete|ok|удалить|confirm)$/i.test((e.innerText||'').trim()));"
+            "if(c)c.click();return!!c;})()"
+        )
+        time.sleep(settle)
+
     def _click_center(self, selector: str) -> bool:
         import json as _json
         box = self._eval(
