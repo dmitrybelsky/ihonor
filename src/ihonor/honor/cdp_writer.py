@@ -22,7 +22,7 @@ import requests
 from websocket import create_connection
 
 NEW_NOTE_BTN = ".newNoteButton"
-TITLE_SEL = ".noteTitleText"
+TITLE_SEL = "textarea.noteTitleText"  # именно textarea (.noteTitleText матчит и div-контейнер)
 BODY_SEL = ".app-note-editor-01,[contenteditable=true]"
 
 
@@ -51,22 +51,34 @@ class HonorCdpWriter:
         r = self._cmd("Runtime.evaluate", {"expression": expr, "returnByValue": True, "awaitPromise": True})
         return r.get("result", {}).get("value")
 
-    def create_note(self, title: str, body: str = "", settle: float = 2.0) -> None:
+    def _set_react_value(self, selector: str, text: str) -> bool:
+        """Установить значение React-контролируемого textarea/input + триггер onChange."""
+        js = (
+            "(()=>{const t=document.querySelector(%r);if(!t)return false;t.focus();"
+            "const proto=t.tagName==='TEXTAREA'?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype;"
+            "const setter=Object.getOwnPropertyDescriptor(proto,'value').set;"
+            "setter.call(t,%r);t.dispatchEvent(new Event('input',{bubbles:true}));return true;})()"
+            % (selector, text)
+        )
+        return self._eval(js) is True
+
+    def create_note(self, title: str, body: str = "", settle: float = 2.5) -> None:
         """Создать заметку через UI app (родной путь записи+синка)."""
         if self._eval(f"(()=>{{const b=document.querySelector('{NEW_NOTE_BTN}');if(!b)return false;b.click();return true;}})()") is not True:
             raise RuntimeError("newNoteButton не найдена")
         time.sleep(1.5)
-        self._eval(f"(()=>{{const t=document.querySelector('{TITLE_SEL}');if(t)t.focus();return!!t;}})()")
-        self._cmd("Input.insertText", {"text": title})
+        # title: React-textarea -> native setter + input event (insertText не триггерит onChange)
+        if not self._set_react_value(TITLE_SEL, title):
+            raise RuntimeError("title textarea не найдена")
         time.sleep(0.4)
         if body:
+            # body: фокус contenteditable напрямую (.focus + caret) -> execCommand insertText
             self._eval(
                 f"(()=>{{const e=document.querySelector('{BODY_SEL}');if(!e)return false;e.focus();"
                 "const r=document.createRange();r.selectNodeContents(e);r.collapse(false);"
-                "const s=getSelection();s.removeAllRanges();s.addRange(r);return true;}})()"
+                "const s=getSelection();s.removeAllRanges();s.addRange(r);"
+                "document.execCommand('insertText',false,%r);return true;}})()" % body
             )
-            time.sleep(0.3)
-            self._cmd("Input.insertText", {"text": body})
         time.sleep(settle)  # автосейв + синк
 
     def close(self) -> None:
