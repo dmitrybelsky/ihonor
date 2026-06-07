@@ -56,7 +56,25 @@ class HonorAdapter:
             w.close()
 
     def delete(self, ext_id: str) -> None:
-        raise UnsupportedHonorWrite("HONOR delete не поддержан (нативное меню, synthetic не триггерит)")
+        cur = self.get(ext_id)
+        if not cur:
+            return
+        # открыть заметку через CDP, удалить нативным AXPress (CDP-синтетика не триггерит delete)
+        from ihonor.honor.ax_delete import ax_press_delete
+        w = HonorCdpWriter(self._port)
+        w.connect()
+        try:
+            if not w.open_note_by_title(cur.title):
+                raise RuntimeError(f"заметка не найдена для удаления: {cur.title}")
+        finally:
+            w.close()
+        import time
+        time.sleep(0.5)
+        if not ax_press_delete():
+            # AX-дерево Electron нестабильно выставляет Delete-контрол → best-effort.
+            # NotImplementedError (не RuntimeError) → движок пропускает без падения.
+            raise UnsupportedHonorWrite("HONOR delete не сработал (AX Delete-контрол не найден; best-effort)")
+        time.sleep(1.0)
 
 
 class UnsupportedHonorWrite(NotImplementedError):
