@@ -18,11 +18,19 @@ class SyncEngine:
         for hid, hn in h_notes.items():
             if hid not in paired_h:
                 iid = self.icloud.create(hn)
-                self.store.upsert(Pair(hid, iid, content_hash(hn), content_hash(hn)))
+                actual = self.icloud.get(iid)
+                self.store.upsert(Pair(hid, iid, content_hash(hn),
+                                       content_hash(actual) if actual else content_hash(hn)))
         for iid, ino in i_notes.items():
             if iid not in paired_i:
                 hid = self.honor.create(ino)
-                self.store.upsert(Pair(hid, iid, content_hash(ino), content_hash(ino)))
+                if not hid:
+                    continue  # create-find промах — не паримся, повтор в след. цикле
+                actual = self.honor.get(hid)
+                # храним РЕАЛЬНЫЙ хеш HONOR-стороны (title может быть обрезан) => без ложных update
+                self.store.upsert(Pair(hid, iid,
+                                       content_hash(actual) if actual else content_hash(ino),
+                                       content_hash(ino)))
 
         for p in self.store.all():
             hn = h_notes.get(p.honor_id)

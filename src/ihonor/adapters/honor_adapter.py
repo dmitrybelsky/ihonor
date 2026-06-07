@@ -25,18 +25,26 @@ class HonorAdapter:
         return None
 
     def create(self, note: Note) -> str:
+        before_ids = {n.ext_id for n in self.list()}  # снимок ДО создания
         w = HonorCdpWriter(self._port)
         w.connect()
         try:
             w.create_note(note.title, note.body_text)
         finally:
             w.close()
-        # app сохраняет в БД с задержкой; находим свежую живую заметку по заголовку
+        # app сохраняет в БД с задержкой; находим созданную заметку.
+        # HONOR обрезает длинные title -> exact-match может промахнуться => fallback на
+        # появившуюся новую (не было в before_ids).
         for _ in range(10):
             time.sleep(1.0)
-            cands = [n for n in self.list() if n.title == note.title]
+            live = self.list()
+            cands = [n for n in live if n.title == note.title]
             if cands:
                 return max(cands, key=lambda n: n.mtime).ext_id
+            # появилась новая (не было до создания) — это наша
+            fresh = [n for n in live if n.ext_id not in before_ids]
+            if fresh:
+                return max(fresh, key=lambda n: n.mtime).ext_id
         return ""
 
     # ПОТОЛОК CDP-drive: HONOR update/delete НЕ достижимы синтетикой —
