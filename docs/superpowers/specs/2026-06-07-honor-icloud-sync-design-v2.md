@@ -31,12 +31,19 @@
 - Поля note: uuid, title, html_content, search_content, dirty, guid, folder_uuid, delete_flag,
   modify_time, type(2=text/6=handwrite).
 
-### HONOR WRITE (CDP-drive app, ✅)
+### HONOR WRITE (CDP-drive app, ✅ ПОЛНЫЙ: create+update+delete)
 - Внешний прямой write в облако заблокирован (device-enrollment + token-binding + DB-integrity).
-- Решение: драйв HonorWorkStation по Chrome DevTools Protocol → app пишет родным путём
-  (своя крипта SM2/AES-GCM + upload) → синк в облако/телефон. `src/ihonor/honor/cdp_writer.py`.
-- create доказан (title+body → телефон). update/delete — доработать (UI-навигация по списку).
-- Запуск app: `open -a HonorWorkStation --args --remote-debugging-port=9222`.
+- Решение: драйв HonorWorkStation → app пишет родным путём (своя крипта SM2/AES-GCM + upload)
+  → синк в облако/телефон. `src/ihonor/honor/cdp_writer.py`. Запуск app:
+  `open -a HonorWorkStation --args --remote-debugging-port=9222`.
+- **create**: click newNoteButton → React-set title (textarea.noteTitleText, native setter+input
+  event) → center-click body (.app-note-editor-01) + Input.insertText → blur. title+body, синк ✅.
+- **update**: open card → click-center body → DOM selectNodeContents (select-all, подтвердить
+  непустым) → реальный Input.insertText (Slate beforeinput заменяет) → blur. Чистая замена ✅.
+- **delete**: реальные OS-клики **cliclick** (CDP-синтетика/AX не триггерят): activate →
+  cliclick rc по карточке (контекст-меню) → cliclick по Delete → cliclick по confirm-Delete.
+  Координаты: screen = window.screenX/Y + viewport (frameless). Надёжно ✅.
+- ЗАВИСИМОСТЬ: `cliclick` (brew install cliclick) + Accessibility (для cliclick OS-кликов).
 
 ## Архитектура движка
 ```
