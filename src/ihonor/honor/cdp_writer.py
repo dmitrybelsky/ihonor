@@ -77,13 +77,35 @@ class HonorCdpWriter:
             raise RuntimeError("title textarea не найдена")
         time.sleep(0.4)
         if body:
-            for t in ("rawKeyDown", "keyUp"):
-                self._cmd("Input.dispatchKeyEvent", {
-                    "type": t, "key": "Tab", "code": "Tab", "windowsVirtualKeyCode": 9,
-                })
+            # реальный mouse-click в ЦЕНТР body-редактора (центр, не угол — угол бьёт в тулбар)
+            if not self._click_center(BODY_SEL):
+                raise RuntimeError("body editor не найден")
             time.sleep(0.3)
             self._cmd("Input.insertText", {"text": body})
+            time.sleep(0.4)
+        # blur/focusout body -> app коммитит и сохраняет (иначе title+body не пишутся в БД)
+        self._eval(
+            f"(()=>{{const e=document.querySelector('{BODY_SEL}');if(e){{"
+            "e.dispatchEvent(new Event('blur',{bubbles:true}));"
+            "e.dispatchEvent(new Event('focusout',{bubbles:true}));}return true;})()"
+        )
         time.sleep(settle)  # автосейв + синк
+
+    def _click_center(self, selector: str) -> bool:
+        import json as _json
+        box = self._eval(
+            "(()=>{const e=document.querySelector(%r);if(!e)return null;"
+            "const r=e.getBoundingClientRect();"
+            "return JSON.stringify({x:r.left+r.width/2,y:r.top+r.height/2});})()" % selector
+        )
+        if not box:
+            return False
+        c = _json.loads(box)
+        for ev_type in ("mousePressed", "mouseReleased"):
+            self._cmd("Input.dispatchMouseEvent", {
+                "type": ev_type, "x": c["x"], "y": c["y"], "button": "left", "clickCount": 1,
+            })
+        return True
 
     def close(self) -> None:
         if self._ws:
