@@ -27,6 +27,10 @@ targets:
         CODE_SIGNING_ALLOWED: NO
         ENABLE_HARDENED_RUNTIME: NO
         SWIFT_VERSION: "5.0"
+    postBuildScripts:
+      - name: Bundle Python engine
+        basedOnDependencyAnalysis: false
+        script: '"${SRCROOT}/build_pyengine.sh" "${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/pyengine"'
   ihonorTests:
     type: bundle.unit-test
     platform: macOS
