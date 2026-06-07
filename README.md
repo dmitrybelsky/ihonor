@@ -20,7 +20,7 @@
 | Сторона | Чтение | Запись |
 |--|--|--|
 | **iCloud** | Apple Notes.app через AppleScript (`osascript`) | Notes.app `make/set/delete`; Apple синкает в облако |
-| **HONOR** | локальная зашифрованная БД (ChaCha20) + node@20 | драйв HonorWorkStation: CDP (`Input.insertText`) + `cliclick` (delete); app пишет родной криптой и синкает |
+| **HONOR** | локальная зашифрованная БД (ChaCha20) через `apsw` (pure-Python) | драйв HonorWorkStation: CDP (`Input.insertText`) + `cliclick` (delete); app пишет родной криптой и синкает |
 
 Прямая запись в облако HONOR **невозможна** (device-enrollment + token-binding +
 DB-integrity) — поэтому пишем через UI самого приложения. Детали: [docs/spike/](docs/spike/).
@@ -31,19 +31,33 @@ DB-integrity) — поэтому пишем через UI самого прил�
 - **Apple Notes.app** — залогинен в iCloud (без Advanced Data Protection, иначе шифр).
 - **HonorWorkStation** — установлен, залогинен, запущен с CDP:
   `open -a HonorWorkStation --args --remote-debugging-port=9222`.
-- `node@20` (better-sqlite3-multiple-ciphers для чтения БД HONOR).
 - `cliclick` (`brew install cliclick`) + разрешение **Accessibility** (для delete на стороне HONOR).
 - Python + [uv](https://docs.astral.sh/uv/) (системный pip может быть сломан — используйте `uv`).
+- Чтение БД HONOR — pure-Python (`apsw-sqlite3mc`); **node больше не нужен**.
 
 ## Запуск
 
+CLI (один цикл):
 ```bash
 uv pip install -e .
 # залогинить iCloud Notes.app и поднять HonorWorkStation с --remote-debugging-port=9222
-uv run python -m ihonor.runner   # один цикл синка
+uv run python -m ihonor.runner          # человекочитаемо
+uv run python -m ihonor.runner --json   # машинный вывод результата
 ```
 
 Автозапуск каждые 15 минут — `config/com.ihonor.sync.plist` (launchd) + `scripts/ihonor_tick.sh`.
+
+## macOS-приложение (menu-bar)
+
+Нативный SwiftUI menu-bar агент в `app/` (статус синка, «Sync now», авто-синк,
+проверка предусловий, окно Настройки/Логи/Пары). Движок Python забандлен внутрь `.app`
+(self-contained, без node). Сборка (нужен Xcode + [xcodegen](https://github.com/yonaskolb/XcodeGen)):
+```bash
+cd app && xcodegen generate
+xcodebuild -project ihonor.xcodeproj -scheme ihonor -configuration Debug build CODE_SIGNING_ALLOWED=NO
+```
+Дизайн/план: [docs/superpowers/specs/2026-06-07-macos-app-design.md](docs/superpowers/specs/2026-06-07-macos-app-design.md),
+[docs/superpowers/plans/2026-06-07-macos-app.md](docs/superpowers/plans/2026-06-07-macos-app.md).
 
 ## Ограничения
 

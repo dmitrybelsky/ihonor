@@ -1,38 +1,45 @@
 """HONOR read: чтение заметок из локальной ChaCha20-БД HonorWorkStation.
 
-Деривация ключа: ihonor.honor.dbkey. Чтение: node@20 + better-sqlite3-multiple-ciphers
-(см. honor_read_helper.js). БД копируется в temp (живую не трогаем).
+Деривация ключа: ihonor.honor.dbkey. Чтение: apsw (apsw-sqlite3mc) — default
+cipher chacha20 совпадает с шифром better-sqlite3-multiple-ciphers, которым app
+шифрует БД. БД копируется в temp (живую не трогаем, чтобы не цеплять WAL/локи).
 """
-import json
 import os
 import shutil
-import subprocess
 import tempfile
-from pathlib import Path
+
+import apsw
 
 from ihonor.honor.dbkey import derive_db_password
 from ihonor.note import Note
 
-NODE = os.environ.get("IHONOR_NODE", "/opt/homebrew/opt/node@20/bin/node")
-NODE_MODULES = os.environ.get("IHONOR_NODE_MODULES", "/tmp/honornode/node_modules")
-HELPER = str(Path(__file__).parent / "honor_read_helper.js")
 DB = os.path.expanduser(
     "~/Library/Containers/com.hihonor.hihonornote/Data/.config/hihonornote/database.sqlite"
 )
 
+_COLS = "uuid,title,search_content,html_content,modify_time,delete_flag,type"
+# html_content и type — зарезервированы для будущего маппинга; канон Note сейчас их не использует.
 
-def read_honor_notes() -> list[Note]:
-    tmp = tempfile.mkdtemp()
+
+def read_rows(db_path: str, key: str) -> list[dict]:
+    """Открыть зашифрованную БД и прочитать строки note как list[dict].
+
+    key не должен содержать одинарную кавычку: PRAGMA key f-string-interpolated,
+    bind-параметры для PRAGMA не поддерживаются в apsw.
+    """
+    if "'" in key:
+        raise ValueError("DB key contains a single quote; cannot set PRAGMA key safely")
+    conn = apsw.Connection(db_path)
     try:
-        db_copy = os.path.join(tmp, "database.sqlite")
-        for suf in ("", "-wal", "-shm"):
-            if os.path.exists(DB + suf):
-                shutil.copy(DB + suf, db_copy + suf)
-        env = dict(os.environ, HONORPW=derive_db_password(), NODE_PATH=NODE_MODULES)
-        out = subprocess.check_output([NODE, HELPER, db_copy], env=env, text=True)
-        rows = json.loads(out)
+        conn.execute(f"PRAGMA key='{key}'")
+        cur = conn.execute(f"SELECT {_COLS} FROM note")
+        names = [d[0] for d in cur.getdescription()]
+        return [dict(zip(names, row)) for row in cur]
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        conn.close()
+
+
+def rows_to_notes(rows: list[dict]) -> list[Note]:
     notes = []
     for r in rows:
         body = (r.get("search_content") or "").strip()
@@ -44,3 +51,16 @@ def read_honor_notes() -> list[Note]:
             deleted=bool(r.get("delete_flag")),
         ))
     return notes
+
+
+def read_honor_notes() -> list[Note]:
+    tmp = tempfile.mkdtemp()
+    try:
+        db_copy = os.path.join(tmp, "database.sqlite")
+        for suf in ("", "-wal", "-shm"):
+            if os.path.exists(DB + suf):
+                shutil.copy(DB + suf, db_copy + suf)
+        rows = read_rows(db_copy, derive_db_password())
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return rows_to_notes(rows)

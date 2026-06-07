@@ -11,6 +11,7 @@ dependencies = [
     "gmssl>=3.2",
     "cryptography>=42",
     "websocket-client>=1.6",
+    "apsw-sqlite3mc>=3.50",
 ]
 
 [project.optional-dependencies]

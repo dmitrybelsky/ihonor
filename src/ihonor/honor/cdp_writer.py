@@ -178,8 +178,12 @@ class HonorCdpWriter:
         cliclick по пункту Delete → cliclick по confirm-Delete (диалог) → удалено+синк.
         Требует cliclick (brew install cliclick) + frameless-окно (viewport origin = screenX/Y).
         """
-        subprocess.run(["osascript", "-e", 'tell application "HonorWorkStation" to activate'],
-                       capture_output=True)
+        subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" to set frontmost of '
+             '(first process whose name is "Hihonornote") to true'],
+            capture_output=True,
+        )
         time.sleep(0.4)
         g = self._screen_geom()
         card = self._card_vp(title)
