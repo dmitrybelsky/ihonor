@@ -15,19 +15,29 @@ final class SyncController: ObservableObject {
 
     private var timer: Timer?
 
-    func refreshPrecheck() { precheck = Preconditions.current() }
+    deinit { timer?.invalidate() }
+
+    /// Precheck выполняется ВНЕ MainActor (checkCDP блокирует до ~2с), результат публикуем на main.
+    func refreshPrecheck() {
+        Task.detached { [weak self] in
+            let pre = Preconditions.current()
+            await MainActor.run { self?.precheck = pre }
+        }
+    }
 
     func syncNow() {
         guard status != .running else { return }
         status = .running
         lastMessage = "Синхронизация…"
         Task.detached { [weak self] in
-            await MainActor.run { self?.refreshPrecheck() }
-            let pre = await MainActor.run { self?.precheck.unmet ?? [] }
-            if pre.contains(where: { $0.contains("HonorWorkStation") }) {
+            // precheck off-main (блокирующий сетевой probe), публикуем на main
+            var pre = Preconditions.current()
+            await MainActor.run { self?.precheck = pre }
+            if pre.unmet.contains(where: { $0.contains("HonorWorkStation") }) {
                 Preconditions.launchHonorWorkStation()
                 try? await Task.sleep(nanoseconds: 6_000_000_000)
-                await MainActor.run { self?.refreshPrecheck() }
+                pre = Preconditions.current()
+                await MainActor.run { self?.precheck = pre }
             }
             do {
                 let r = try EngineBridge.sync()

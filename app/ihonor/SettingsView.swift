@@ -12,6 +12,7 @@ struct MainWindowView: View {
         }
         .frame(width: 560, height: 420)
         .padding()
+        .onDisappear { NSApp.setActivationPolicy(.accessory) }  // вернуть agent-режим
     }
 }
 
@@ -53,17 +54,24 @@ struct LogsTab: View {
         }
     }
     private func reload() {
-        text = (try? String(contentsOfFile: logPath, encoding: .utf8)) ?? ""
+        // Отличаем «лога нет» (норм) от ошибки чтения (показываем).
+        if !FileManager.default.fileExists(atPath: logPath) { text = ""; return }
+        do { text = try String(contentsOfFile: logPath, encoding: .utf8) }
+        catch { text = "Не удалось прочитать лог: \(error.localizedDescription)" }
     }
     private func exportLog() {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "ihonor-log.txt"
         panel.allowedContentTypes = [.plainText]
         panel.canCreateDirectories = true
-        NSApp.activate(ignoringOtherApps: true)  // accessory-app: panel на перед
+        NSApp.activate(ignoringOtherApps: true)  // окно уже .regular (open), panel выйдет на перед
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let content = (try? String(contentsOfFile: logPath, encoding: .utf8)) ?? text
-        try? content.write(to: url, atomically: true, encoding: .utf8)
+        do {
+            let content = (try? String(contentsOfFile: logPath, encoding: .utf8)) ?? text
+            try content.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            NSAlert(error: error).runModal()         // показываем сбой записи
+        }
     }
     private func revealInFinder() {
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: logPath)])
@@ -88,6 +96,6 @@ struct PairsTab: View {
     }
     private func reload() {
         do { pairs = try EngineBridge.pairs(); err = nil }
-        catch { err = "\(error)" }
+        catch { err = "Ошибка загрузки пар: \(String("\(error)".prefix(200)))" }
     }
 }

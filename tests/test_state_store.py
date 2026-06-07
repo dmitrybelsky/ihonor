@@ -11,5 +11,5 @@ def test_all_and_delete(tmp_path):
     s = StateStore(str(tmp_path / "s.db"))
     s.upsert(Pair(honor_id="h1", icloud_id="i1", hash_honor="a", hash_icloud="a"))
     assert len(s.all()) == 1
-    s.remove("h1")
+    s.remove("h1", "i1")
     assert s.by_honor("h1") is None

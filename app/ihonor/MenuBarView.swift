@@ -7,7 +7,7 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(ctrl.lastMessage).font(.callout)
-            if let r = ctrl.lastResult {
+            if let r = ctrl.lastResult, ctrl.status == .ok || ctrl.status == .warning {
                 Text(detail(r)).font(.caption).foregroundStyle(.secondary)
             }
             Divider()
@@ -24,7 +24,10 @@ struct MenuBarView: View {
             }
             Divider()
             Button("Открыть окно…") {
-                NSApp.activate(ignoringOtherApps: true)  // accessory-app: иначе окно не выходит на перед
+                // accessory-app: окно не выходит на перед без .regular+activate. Возврат в
+                // .accessory — в MainWindowView.onDisappear.
+                NSApp.setActivationPolicy(.regular)
+                NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: "main")
             }
             Button("Выход") { NSApplication.shared.terminate(nil) }

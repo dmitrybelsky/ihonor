@@ -39,7 +39,7 @@ struct Preconditions {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         p.arguments = ["-a", "HonorWorkStation", "--args", "--remote-debugging-port=\(port)"]
-        try? p.run()
+        do { try p.run() } catch { NSLog("ihonor: launch HonorWorkStation failed: \(error)") }
     }
 
     static func current() -> PrecheckResult {

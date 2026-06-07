@@ -27,9 +27,18 @@ targets:
         CODE_SIGNING_ALLOWED: NO
         ENABLE_HARDENED_RUNTIME: NO
         SWIFT_VERSION: "5.0"
+    # NB: для notarization/hardened-runtime pyengine надо собирать ДО подписи (или
+    # переподписывать .app после). Сейчас ad-hoc/unsigned — postBuild годится.
     postBuildScripts:
       - name: Bundle Python engine
+        # basedOnDependencyAnalysis:false → фаза идёт всегда, но скрипт сам фаст-путит
+        # (без сети при наличии pyengine), поэтому инкрементальная сборка дешёвая.
         basedOnDependencyAnalysis: false
+        outputFiles:
+          - "$(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/pyengine/bin/python3"
+        inputFiles:
+          - "$(SRCROOT)/build_pyengine.sh"
+          - "$(SRCROOT)/../pyproject.toml"
         script: '"${SRCROOT}/build_pyengine.sh" "${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/pyengine"'
   ihonorTests:
     type: bundle.unit-test

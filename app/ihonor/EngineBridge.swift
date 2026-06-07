@@ -1,6 +1,6 @@
 import Foundation
 
-enum EngineError: Error { case nonZero(Int32, String), notFound }
+enum EngineError: Error { case nonZero(Int32, String), notFound, launchFailed(String) }
 
 struct EngineBridge {
     /// Путь к забандленному python внутри .app (bundle-задача кладёт сюда).
@@ -28,7 +28,7 @@ struct EngineBridge {
         proc.arguments = ["-m", module] + args
         let out = Pipe(); let err = Pipe()
         proc.standardOutput = out; proc.standardError = err
-        do { try proc.run() } catch { throw EngineError.nonZero(-1, "\(error)") }
+        do { try proc.run() } catch { throw EngineError.launchFailed("\(error)") }
         // Читаем stderr в фоне, чтобы не словить deadlock на полном pipe-буфере,
         // пока блокируемся на чтении stdout (traceback/log может превысить 64KB).
         var errData = Data()
@@ -39,9 +39,16 @@ struct EngineBridge {
         let data = out.fileHandleForReading.readDataToEndOfFile()
         g.wait()
         proc.waitUntilExit()
-        if proc.terminationStatus != 0 && data.isEmpty {
-            let msg = String(data: errData, encoding: .utf8) ?? ""
-            throw EngineError.nonZero(proc.terminationStatus, msg)
+        // runner на ошибке пишет валидный error-JSON и exit(1) — это легитимно (декодится в ok:false).
+        // Но ненулевой exit с НЕ-JSON stdout (traceback/print до краха) = реальный сбой:
+        // бросаем со stderr, не отдаём мусор в JSONDecoder.
+        if proc.terminationStatus != 0 {
+            let first = data.first
+            let looksJSON = first == 0x7B || first == 0x5B  // '{' или '['
+            if !looksJSON {
+                throw EngineError.nonZero(proc.terminationStatus,
+                                          String(data: errData, encoding: .utf8) ?? "")
+            }
         }
         return data
     }

@@ -6,21 +6,32 @@ DEST="${1:?usage: build_pyengine.sh <dest-dir>}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 PBS_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.12.7+20241016-aarch64-apple-darwin-install_only.tar.gz"
 
-# Python уже распакован — обновляем только пакет ihonor (исходники могли поменяться),
-# не качаем интерпретатор заново.
-if [ -x "$DEST/bin/python3" ] && "$DEST/bin/python3" -c "import apsw" 2>/dev/null; then
+# Фаст-путь: python+apsw+ihonor уже на месте → обновляем только пакет ihonor
+# (исходники могли поменяться) и доустанавливаем недостающие зависимости.
+if [ -x "$DEST/bin/python3" ] && "$DEST/bin/python3" -c "import apsw, requests, websocket" 2>/dev/null; then
   echo "→ обновляю ihonor в существующем pyengine"
   "$DEST/bin/python3" -m pip install --force-reinstall --no-deps --no-warn-script-location "$REPO"
+  "$DEST/bin/python3" -m pip install --no-warn-script-location "$REPO"  # реконсиляция deps
+  "$DEST/bin/python3" -c "import ihonor, apsw" || { echo "✗ pyengine битый"; exit 1; }
   echo "✓ pyengine обновлён: $DEST/bin/python3"; exit 0
 fi
 
 TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT  # чистим temp при любом выходе
+
 echo "→ скачиваю python-build-standalone"
 curl -fsSL "$PBS_URL" -o "$TMP/py.tar.gz"
-rm -rf "$DEST"; mkdir -p "$DEST"
+echo "→ проверяю sha256"
+EXPECTED="$(curl -fsSL "$PBS_URL.sha256")"
+echo "$EXPECTED  $TMP/py.tar.gz" | shasum -a 256 -c - || { echo "✗ sha256 mismatch"; exit 1; }
+
+# Сборка в staging, атомарный swap — $DEST всегда либо старый-рабочий, либо новый-рабочий.
+STAGE="$DEST.new"
+rm -rf "$STAGE"; mkdir -p "$STAGE"
 tar -xzf "$TMP/py.tar.gz" -C "$TMP"
-cp -R "$TMP/python/." "$DEST/"
+cp -R "$TMP/python/." "$STAGE/"
 echo "→ ставлю ihonor + deps в bundled python"
-"$DEST/bin/python3" -m pip install --no-warn-script-location "$REPO"
-rm -rf "$TMP"
+"$STAGE/bin/python3" -m pip install --no-warn-script-location "$REPO"
+"$STAGE/bin/python3" -c "import ihonor, apsw" || { echo "✗ staging битый"; exit 1; }
+rm -rf "$DEST" && mv "$STAGE" "$DEST"
 echo "✓ pyengine готов: $DEST/bin/python3"
