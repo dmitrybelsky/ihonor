@@ -28,9 +28,16 @@ struct EngineBridge {
         proc.arguments = ["-m", module] + args
         let out = Pipe(); let err = Pipe()
         proc.standardOutput = out; proc.standardError = err
-        try proc.run()
+        do { try proc.run() } catch { throw EngineError.nonZero(-1, "\(error)") }
+        // Читаем stderr в фоне, чтобы не словить deadlock на полном pipe-буфере,
+        // пока блокируемся на чтении stdout (traceback/log может превысить 64KB).
+        var errData = Data()
+        let g = DispatchGroup(); g.enter()
+        DispatchQueue.global().async {
+            errData = err.fileHandleForReading.readDataToEndOfFile(); g.leave()
+        }
         let data = out.fileHandleForReading.readDataToEndOfFile()
-        let errData = err.fileHandleForReading.readDataToEndOfFile()
+        g.wait()
         proc.waitUntilExit()
         if proc.terminationStatus != 0 && data.isEmpty {
             let msg = String(data: errData, encoding: .utf8) ?? ""
