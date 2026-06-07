@@ -1,4 +1,5 @@
 import apsw
+import pytest
 from ihonor.adapters.honor_read import read_rows, rows_to_notes
 
 
@@ -40,3 +41,17 @@ def test_rows_to_notes_maps_fields():
     assert notes[0].mtime == 123
     assert notes[0].deleted is False
     assert notes[1].deleted is True
+
+
+def test_read_rows_wrong_key_raises(tmp_path):
+    db = tmp_path / "database.sqlite"
+    _make_encrypted_db(db, "deadbeefdeadbeef")
+    with pytest.raises(Exception):
+        read_rows(str(db), "0000000000000000")
+
+
+def test_read_rows_rejects_quote_in_key(tmp_path):
+    db = tmp_path / "database.sqlite"
+    _make_encrypted_db(db, "deadbeefdeadbeef")
+    with pytest.raises(ValueError):
+        read_rows(str(db), "ab'cd")

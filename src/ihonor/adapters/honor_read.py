@@ -18,10 +18,17 @@ DB = os.path.expanduser(
 )
 
 _COLS = "uuid,title,search_content,html_content,modify_time,delete_flag,type"
+# html_content и type — зарезервированы для будущего маппинга; канон Note сейчас их не использует.
 
 
 def read_rows(db_path: str, key: str) -> list[dict]:
-    """Открыть зашифрованную БД и прочитать строки note как list[dict]."""
+    """Открыть зашифрованную БД и прочитать строки note как list[dict].
+
+    key не должен содержать одинарную кавычку: PRAGMA key f-string-interpolated,
+    bind-параметры для PRAGMA не поддерживаются в apsw.
+    """
+    if "'" in key:
+        raise ValueError("DB key contains a single quote; cannot set PRAGMA key safely")
     conn = apsw.Connection(db_path)
     try:
         conn.execute(f"PRAGMA key='{key}'")
