@@ -32,12 +32,17 @@ class ICloudAdapter:
     """NoteAdapter поверх Apple Notes.app."""
 
     def list(self) -> list[Note]:
+        # Обходим папки, пропуская "Recently Deleted" → только живые заметки.
+        # Удаление детектится движком по исчезновению из списка.
         script = (
             'tell application "Notes"\n'
-            f'set AppleScript\'s text item delimiters to "{US}"\n'
             'set out to ""\n'
-            'repeat with n in notes\n'
+            'repeat with f in folders\n'
+            'if (name of f) is not "Recently Deleted" then\n'
+            'repeat with n in notes of f\n'
             f'set out to out & (id of n) & "{US}" & (name of n) & "{US}" & (body of n) & "{RS}"\n'
+            'end repeat\n'
+            'end if\n'
             'end repeat\n'
             'return out\n'
             'end tell'
