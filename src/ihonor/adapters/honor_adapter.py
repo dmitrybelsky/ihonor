@@ -46,7 +46,14 @@ class HonorAdapter:
     # Реализация-черновик в cdp_writer.update_note/delete_note оставлена для будущего
     # не-CDP подхода (webpack-модель editor'а / Frida).
     def update(self, ext_id: str, note: Note) -> None:
-        raise UnsupportedHonorWrite("HONOR update не поддержан (CDP-editor резистентен к replace)")
+        cur = self.get(ext_id)
+        title = cur.title if cur else note.title
+        w = HonorCdpWriter(self._port)
+        w.connect()
+        try:
+            w.update_note(title, note.body_text)
+        finally:
+            w.close()
 
     def delete(self, ext_id: str) -> None:
         raise UnsupportedHonorWrite("HONOR delete не поддержан (нативное меню, synthetic не триггерит)")

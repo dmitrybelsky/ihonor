@@ -23,7 +23,7 @@ from websocket import create_connection
 
 NEW_NOTE_BTN = ".newNoteButton"
 TITLE_SEL = "textarea.noteTitleText"  # именно textarea (.noteTitleText матчит и div-контейнер)
-BODY_SEL = ".app-note-editor-01,[contenteditable=true]"
+BODY_SEL = ".app-note-editor-01"  # конкретный класс (comma-fallback ломал selectNodeContents)
 
 
 class HonorCdpWriter:
@@ -119,19 +119,26 @@ class HonorCdpWriter:
         return True
 
     def update_note(self, title: str, new_body: str, settle: float = 2.5) -> None:
-        """Открыть заметку по заголовку, заменить тело."""
+        """Открыть заметку, выделить ВЕСЬ body (DOM Selection) и заменить реальным insertText.
+
+        Slate заменяет выделенное только через реальное input-событие (CDP Input.insertText)
+        на корректно выставленном DOM-выделении. Подтверждаем непустое выделение перед вводом
+        (иначе insertText добавляет в каретку → append).
+        """
         if not self.open_note_by_title(title):
             raise RuntimeError(f"заметка не найдена в списке: {title}")
+        time.sleep(0.7)  # дать редактору отрисовать контент открытой заметки
         if not self._click_center(BODY_SEL):
             raise RuntimeError("body editor не найден")
-        time.sleep(0.3)
-        # выделить ВСЁ содержимое body (Selection API) -> insertText заменит выделенное
-        self._eval(
-            f"(()=>{{const e=document.querySelector('{BODY_SEL}');if(!e)return false;e.focus();"
-            "const r=document.createRange();r.selectNodeContents(e);"
-            "const s=getSelection();s.removeAllRanges();s.addRange(r);return true;}})()"
-        )
-        time.sleep(0.2)
+        time.sleep(0.4)
+        sel = "(()=>{const e=document.querySelector('%s');if(!e)return '';e.focus();" \
+              "const r=document.createRange();r.selectNodeContents(e);" \
+              "const s=getSelection();s.removeAllRanges();s.addRange(r);" \
+              "return getSelection().toString();})()" % BODY_SEL
+        selected = self._eval(sel)
+        if not selected:  # выделение пустое — повтор после паузы
+            time.sleep(0.5)
+            selected = self._eval(sel)
         self._cmd("Input.insertText", {"text": new_body})
         time.sleep(0.4)
         self._eval(
