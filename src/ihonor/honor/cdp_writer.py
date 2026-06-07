@@ -52,13 +52,18 @@ class HonorCdpWriter:
         return r.get("result", {}).get("value")
 
     def _set_react_value(self, selector: str, text: str) -> bool:
-        """Установить значение React-контролируемого textarea/input + триггер onChange."""
+        """Установить значение React-контролируемого textarea/input + триггер onChange.
+
+        Значения вставляются как JS-safe литералы (json.dumps), НЕ через %r — title/body
+        приходят из заметок (внешний контент, синк iCloud) → защита от JS-инъекции/поломки.
+        """
+        sel = json.dumps(selector)
+        val = json.dumps(text)
         js = (
-            "(()=>{const t=document.querySelector(%r);if(!t)return false;t.focus();"
+            f"(()=>{{const t=document.querySelector({sel});if(!t)return false;t.focus();"
             "const proto=t.tagName==='TEXTAREA'?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype;"
             "const setter=Object.getOwnPropertyDescriptor(proto,'value').set;"
-            "setter.call(t,%r);t.dispatchEvent(new Event('input',{bubbles:true}));return true;})()"
-            % (selector, text)
+            f"setter.call(t,{val});t.dispatchEvent(new Event('input',{{bubbles:true}}));return true;}})()"
         )
         return self._eval(js) is True
 
@@ -92,17 +97,20 @@ class HonorCdpWriter:
         time.sleep(settle)  # автосейв + синк
 
     def open_note_by_title(self, title: str) -> bool:
-        """Открыть/выделить заметку в списке по точному заголовку (клик по карточке)."""
-        import json as _json
+        """Открыть/выделить заметку в списке по точному заголовку (клик по карточке).
+
+        title вставляется как JS-safe литерал (json.dumps), не через %r (внешний контент).
+        """
+        jt = json.dumps(title)
         box = self._eval(
             "(()=>{const c=[...document.querySelectorAll('.noteCardItem')]"
-            ".find(e=>(e.innerText||'').split('\\n')[0].trim()===%r);"
+            f".find(e=>(e.innerText||'').split('\\n')[0].trim()==={jt});"
             "if(!c)return null;const r=c.getBoundingClientRect();"
-            "return JSON.stringify({x:r.left+r.width/2,y:r.top+18});})()" % title
+            "return JSON.stringify({x:r.left+r.width/2,y:r.top+18});})()"
         )
         if not box:
             return False
-        c = _json.loads(box)
+        c = json.loads(box)
         for ev_type in ("mousePressed", "mouseReleased"):
             self._cmd("Input.dispatchMouseEvent", {
                 "type": ev_type, "x": c["x"], "y": c["y"], "button": "left", "clickCount": 1,
