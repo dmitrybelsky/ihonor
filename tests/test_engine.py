@@ -44,3 +44,31 @@ def test_delete_propagates(tmp_path):
     hid=honor.create(Note("","T","b",1)); eng=SyncEngine(honor,icloud,st); eng.sync_once()
     honor.delete(hid); eng.sync_once()
     assert all(n.deleted for n in icloud.list())
+
+
+class NoWriteUpdateAdapter(InMemoryAdapter):
+    """Адаптер без update/delete (как HONOR CDP) — кидает NotImplementedError."""
+    def update(self, ext_id, note):
+        raise NotImplementedError("no update")
+    def delete(self, ext_id):
+        raise NotImplementedError("no delete")
+
+
+def test_engine_tolerates_unsupported_honor_update(tmp_path):
+    honor = NoWriteUpdateAdapter(); icloud = InMemoryAdapter(); st = StateStore(str(tmp_path/"s.db"))
+    hid = honor.create(Note("", "T", "b", 1))
+    eng = SyncEngine(honor, icloud, st); eng.sync_once()
+    iid = [n.ext_id for n in icloud.list() if n.title == "T"][0]
+    # iCloud edited -> engine tries honor.update -> NotImplementedError -> skip (no crash)
+    icloud.update(iid, Note(iid, "T", "icloud-edit", 2))
+    eng.sync_once()  # must not raise
+    assert any(n.title == "T" for n in honor.list())
+
+
+def test_engine_tolerates_unsupported_honor_delete(tmp_path):
+    honor = NoWriteUpdateAdapter(); icloud = InMemoryAdapter(); st = StateStore(str(tmp_path/"s.db"))
+    honor.create(Note("", "T", "b", 1))
+    eng = SyncEngine(honor, icloud, st); eng.sync_once()
+    iid = [n.ext_id for n in icloud.list() if n.title == "T"][0]
+    icloud.delete(iid)
+    eng.sync_once()  # honor.delete -> NotImplementedError -> skip, no crash

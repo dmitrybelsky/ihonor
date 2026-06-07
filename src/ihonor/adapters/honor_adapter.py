@@ -39,23 +39,18 @@ class HonorAdapter:
                 return max(cands, key=lambda n: n.mtime).ext_id
         return ""
 
+    # ПОТОЛОК CDP-drive: HONOR update/delete НЕ достижимы синтетикой —
+    # кастомный body-editor игнорит select-all-replace (update только append, портит),
+    # delete = нативное контекст-меню/trusted-gestures (synthetic не триггерит).
+    # Надёжно только CREATE. Для движка HONOR = read + create (см. UnsupportedHonorWrite).
+    # Реализация-черновик в cdp_writer.update_note/delete_note оставлена для будущего
+    # не-CDP подхода (webpack-модель editor'а / Frida).
     def update(self, ext_id: str, note: Note) -> None:
-        cur = self.get(ext_id)
-        title = cur.title if cur else note.title
-        w = HonorCdpWriter(self._port)
-        w.connect()
-        try:
-            w.update_note(title, note.body_text)
-        finally:
-            w.close()
+        raise UnsupportedHonorWrite("HONOR update не поддержан (CDP-editor резистентен к replace)")
 
     def delete(self, ext_id: str) -> None:
-        cur = self.get(ext_id)
-        if not cur:
-            return
-        w = HonorCdpWriter(self._port)
-        w.connect()
-        try:
-            w.delete_note(cur.title)
-        finally:
-            w.close()
+        raise UnsupportedHonorWrite("HONOR delete не поддержан (нативное меню, synthetic не триггерит)")
+
+
+class UnsupportedHonorWrite(NotImplementedError):
+    """HONOR update/delete недостижимы через CDP (см. honor_adapter ПОТОЛОК)."""

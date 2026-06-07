@@ -36,8 +36,11 @@ class SyncEngine:
                 self.icloud.update(p.icloud_id, hn)
                 self.store.upsert(Pair(p.honor_id, p.icloud_id, hh, hh))
             elif i_changed and not h_changed:
-                self.honor.update(p.honor_id, ino)
-                self.store.upsert(Pair(p.honor_id, p.icloud_id, ih, ih))
+                try:
+                    self.honor.update(p.honor_id, ino)
+                    self.store.upsert(Pair(p.honor_id, p.icloud_id, ih, ih))
+                except NotImplementedError:
+                    pass  # адаптер не поддерживает update (напр. HONOR CDP) — пропуск
             elif h_changed and i_changed:
                 conflict = Note("", hn.title + " (conflict)", hn.body_text, hn.mtime)
                 self.icloud.create(conflict)
@@ -49,6 +52,11 @@ class SyncEngine:
             h_gone = p.honor_id not in h_ids
             i_gone = p.icloud_id not in i_ids
             if h_gone and not i_gone:
-                self.icloud.delete(p.icloud_id); self.store.remove(p.honor_id)
+                self.icloud.delete(p.icloud_id)
+                self.store.remove(p.honor_id)
             elif i_gone and not h_gone:
-                self.honor.delete(p.honor_id); self.store.remove(p.honor_id)
+                try:
+                    self.honor.delete(p.honor_id)
+                    self.store.remove(p.honor_id)
+                except NotImplementedError:
+                    pass  # адаптер не поддерживает delete (HONOR CDP) — пропуск
