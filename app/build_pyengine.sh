@@ -8,7 +8,7 @@ PBS_URL="https://github.com/astral-sh/python-build-standalone/releases/download/
 
 # Фаст-путь: python+apsw+ihonor уже на месте → обновляем только пакет ihonor
 # (исходники могли поменяться) и доустанавливаем недостающие зависимости.
-if [ -x "$DEST/bin/python3" ] && "$DEST/bin/python3" -c "import apsw, requests, websocket" 2>/dev/null; then
+if [ -x "$DEST/bin/python3" ] && "$DEST/bin/python3" -c "import apsw, requests, websocket, gmssl, pyicloud, dotenv" 2>/dev/null; then
   echo "→ обновляю ihonor в существующем pyengine"
   "$DEST/bin/python3" -m pip install --force-reinstall --no-deps --no-warn-script-location "$REPO"
   "$DEST/bin/python3" -m pip install --no-warn-script-location "$REPO"  # реконсиляция deps
@@ -20,9 +20,9 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT  # чистим temp при любом выходе
 
 echo "→ скачиваю python-build-standalone"
-curl -fsSL "$PBS_URL" -o "$TMP/py.tar.gz"
+curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 "$PBS_URL" -o "$TMP/py.tar.gz"
 echo "→ проверяю sha256"
-EXPECTED="$(curl -fsSL "$PBS_URL.sha256")"
+EXPECTED="$(curl -fsSL --retry 3 --connect-timeout 20 "$PBS_URL.sha256")"
 echo "$EXPECTED  $TMP/py.tar.gz" | shasum -a 256 -c - || { echo "✗ sha256 mismatch"; exit 1; }
 
 # Сборка в staging, атомарный swap — $DEST всегда либо старый-рабочий, либо новый-рабочий.
@@ -33,5 +33,9 @@ cp -R "$TMP/python/." "$STAGE/"
 echo "→ ставлю ihonor + deps в bundled python"
 "$STAGE/bin/python3" -m pip install --no-warn-script-location "$REPO"
 "$STAGE/bin/python3" -c "import ihonor, apsw" || { echo "✗ staging битый"; exit 1; }
-rm -rf "$DEST" && mv "$STAGE" "$DEST"
+# Swap с бэкапом: старый отводим в .old, ставим новый, чистим .old. Окно «нет pyengine»
+# минимально (mv внутри одной ФС атомарен), а при краше остаётся .old для восстановления.
+[ -d "$DEST" ] && mv "$DEST" "$DEST.old"
+mv "$STAGE" "$DEST"
+rm -rf "$DEST.old"
 echo "✓ pyengine готов: $DEST/bin/python3"

@@ -95,7 +95,16 @@ struct PairsTab: View {
         .toolbar { Button("Обновить", action: reload) }
     }
     private func reload() {
-        do { pairs = try EngineBridge.pairs(); err = nil }
-        catch { err = "Ошибка загрузки пар: \(String("\(error)".prefix(200)))" }
+        // EngineBridge.pairs() запускает python-subprocess — не на MainActor (иначе фриз UI).
+        Task {
+            let result = await Task.detached { () -> Result<[PairRow], Error> in
+                do { return .success(try EngineBridge.pairs()) }
+                catch { return .failure(error) }
+            }.value
+            switch result {
+            case .success(let p): pairs = p; err = nil
+            case .failure(let e): err = "Ошибка загрузки пар: \(String("\(e)".prefix(200)))"
+            }
+        }
     }
 }

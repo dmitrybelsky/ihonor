@@ -29,6 +29,11 @@ struct EngineBridge {
         let out = Pipe(); let err = Pipe()
         proc.standardOutput = out; proc.standardError = err
         do { try proc.run() } catch { throw EngineError.launchFailed("\(error)") }
+        // Watchdog: зависший движок (стак CDP-сокет / Accessibility-промпт / залипший
+        // AppleScript) иначе клинит синк навсегда (status застрянет .running). Убиваем по дедлайну.
+        let watchdog = DispatchWorkItem { if proc.isRunning { proc.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 240, execute: watchdog)
+        defer { watchdog.cancel() }
         // Читаем stderr в фоне, чтобы не словить deadlock на полном pipe-буфере,
         // пока блокируемся на чтении stdout (traceback/log может превысить 64KB).
         var errData = Data()

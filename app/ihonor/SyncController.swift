@@ -84,6 +84,9 @@ final class SyncController: ObservableObject {
     }
 
     func requestNotificationAuth() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+            if let error { NSLog("ihonor: notif auth error: \(error)") }
+            else if !granted { NSLog("ihonor: notifications denied by user") }
+        }
     }
 }

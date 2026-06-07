@@ -61,21 +61,40 @@ def read_enkey() -> str:
     return inner
 
 
-def derive_db_password() -> str:
-    enkey_hex = read_enkey()
-    os.environ.setdefault("DYLD_LIBRARY_PATH", f"{APP}/Frameworks:{APP}/OfficeCenter")
-    enkey = bytes.fromhex(enkey_hex)
-    out = ctypes.create_string_buffer(len(enkey))
-    with _suppress_c_stdout():  # dylib печатает 'Library initialized.' в stdout
-        lib = ctypes.CDLL(DYLIB)
+_FN = None  # кэш сконфигурированной нативной функции (dlopen один раз на процесс)
+
+
+def _aead_fn():
+    global _FN
+    if _FN is None:
+        os.environ.setdefault("DYLD_LIBRARY_PATH", f"{APP}/Frameworks:{APP}/OfficeCenter")
+        with _suppress_c_stdout():  # dylib печатает 'Library initialized.' при загрузке
+            lib = ctypes.CDLL(DYLIB)
         fn = lib.honorcloud_aead_decrypt
         fn.restype = ctypes.c_int
         fn.argtypes = [
             ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_int,
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p,
         ]
-        fn(NID, enkey, len(enkey), None, 0, b"\x00" * 16, AES_KEY, KEY_MATA, 16, out)
-    return out.raw.rstrip(b"\x00").decode("utf-8")
+        _FN = fn
+    return _FN
+
+
+def derive_db_password() -> str:
+    enkey_hex = read_enkey()
+    enkey = bytes.fromhex(enkey_hex)
+    out = ctypes.create_string_buffer(len(enkey))
+    rc = _aead_fn()(NID, enkey, len(enkey), None, 0, b"\x00" * 16, AES_KEY, KEY_MATA, 16, out)
+    # rc-конвенция нативной функции недокументирована → не гейтим на rc, валидируем ВЫХОД:
+    # пустой/недекодируемый буфер = провал деривации (иначе вернётся мусор-ключ, всплывёт
+    # позже как opaque apsw 'file is not a database').
+    raw = out.raw.rstrip(b"\x00")
+    if not raw:
+        raise RuntimeError(f"honorcloud_aead_decrypt: пустой ключ (rc={rc}), деривация не удалась")
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise RuntimeError(f"honorcloud_aead_decrypt: ключ не UTF-8 (rc={rc}), деривация не удалась") from e
 
 
 if __name__ == "__main__":
