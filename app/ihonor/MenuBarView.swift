@@ -23,7 +23,10 @@ struct MenuBarView: View {
                 }
             }
             Divider()
-            Button("Открыть окно…") { openWindow(id: "main") }
+            Button("Открыть окно…") {
+                NSApp.activate(ignoringOtherApps: true)  // accessory-app: иначе окно не выходит на перед
+                openWindow(id: "main")
+            }
             Button("Выход") { NSApplication.shared.terminate(nil) }
         }
         .padding(10)
